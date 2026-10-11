@@ -4,3 +4,7 @@
 __pycache__/
 /dist/
 /build-work/
+
+# Private notes: never commit
+/implementationplan.md
+/private/

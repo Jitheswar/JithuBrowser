@@ -9,3 +9,4 @@
 0009-reserve-browser-shortcuts.patch
 0010-windows-cross-build-sdk-26100.patch
 0011-screen-metrics-wake-lock-vibrate-mouse.patch
+0012-own-profile-dir-and-desktop-identity.patch
