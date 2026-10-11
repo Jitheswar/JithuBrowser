@@ -1,0 +1,31 @@
+diff --git a/third_party/angle/BUILD.gn b/third_party/angle/BUILD.gn
+index ee762fe..a37f783 100644
+--- a/third_party/angle/BUILD.gn
++++ b/third_party/angle/BUILD.gn
+@@ -430,9 +430,11 @@ config("build_id_config") {
+ _use_copy_compiler_dll = angle_has_build && is_win
+ 
+ if (_use_copy_compiler_dll) {
+-  copy("copy_compiler_dll") {
+-    sources = [ "$windows_sdk_path/Redist/D3D/$target_cpu/d3dcompiler_47.dll" ]
+-    outputs = [ "$root_out_dir/{{source_file_part}}" ]
++  # JithuBrowser: the Windows SDK redistributable copy of d3dcompiler_47.dll is
++  # not available when cross-compiling from Linux with the public toolchain.
++  # Windows 10+ (the minimum for this Chromium) ships it in System32, which
++  # ANGLE loads by name, so nothing is bundled.
++  group("copy_compiler_dll") {
+   }
+ }
+ 
+diff --git a/chrome/installer/mini_installer/chrome.release b/chrome/installer/mini_installer/chrome.release
+index 037b80488c..6726e7e823 100644
+--- a/chrome/installer/mini_installer/chrome.release
++++ b/chrome/installer/mini_installer/chrome.release
+@@ -25,7 +25,6 @@ chrome_elf.dll: %(VersionDir)s\
+ chrome_pwa_launcher.exe: %(VersionDir)s\
+ chrome_renderer.dll: %(VersionDir)s\
+ chrome_wer.dll: %(VersionDir)s\
+-d3dcompiler_47.dll: %(VersionDir)s\
+ eventlog_provider.dll: %(VersionDir)s\
+ icudtl.dat: %(VersionDir)s\
+ libEGL.dll: %(VersionDir)s\

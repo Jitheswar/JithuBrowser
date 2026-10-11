@@ -5,7 +5,7 @@ set -euo pipefail
 source "$(dirname "$0")/env.sh"
 cd "$JB_SRC"
 if [ "${1:-}" != "--no-reset" ]; then
-  for repo in . v8 third_party/devtools-frontend/src; do
+  for repo in . v8 third_party/devtools-frontend/src third_party/angle; do
     git -C "$repo" checkout -q -- .
     git -C "$repo" clean -qfd -e out/ -e '*.pyc' -- $( [ "$repo" = . ] && echo chrome components content third_party/blink extensions services ui net || echo . )
   done

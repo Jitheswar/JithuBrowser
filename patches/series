@@ -10,3 +10,4 @@
 0010-windows-cross-build-sdk-26100.patch
 0011-screen-metrics-wake-lock-vibrate-mouse.patch
 0012-own-profile-dir-and-desktop-identity.patch
+0013-windows-do-not-bundle-d3dcompiler.patch
