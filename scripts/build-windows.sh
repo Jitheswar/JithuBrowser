@@ -18,6 +18,9 @@ use_clang_modules = false
 # dxildia (inside Dawn's built DXC) needs dia2.h from Visual Studio's DIA SDK, which the public
 # toolchain download does not include. WebGPU then uses the system FXC compiler instead.
 dawn_use_built_dxc = false
+# The public CRT download has no .pdb files, so lld-link warns (LNK4099) about every CRT object;
+# Chromium makes linker warnings fatal by default.
+fatal_linker_warnings = false
 ARGS
 # Linux-only options in the shared args.gn do not apply on Windows; widevine/codecs do.
 gn gen "$OUT"

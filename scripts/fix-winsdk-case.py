@@ -62,4 +62,23 @@ for name in sorted(names):
         os.symlink(os.path.relpath(os.path.join(r, real), os.path.dirname(link)), link)
         made += 1
         break
-print(f"scanned {len(names)} distinct includes; created {made} case symlinks ({skipped} already present)")
+# Libraries are looked up case-insensitively by link.exe too (lld-link on Linux is case-sensitive):
+# add a symlink for every spelling of a .lib that Chromium's build files and sources use.
+sdk_lib = os.path.join(winsys, "Windows Kits", "10", "Lib")
+sdk_lib = os.path.join(sdk_lib, sorted(d for d in os.listdir(sdk_lib) if re.fullmatch(r"10\.0\.\d+", d))[0])
+msvc_lib = os.path.join(winsys, "VC", "Tools", "MSVC", sorted(os.listdir(os.path.join(winsys, "VC", "Tools", "MSVC")))[-1], "lib")
+libdirs = [os.path.join(sdk_lib, c, a) for c in ("um", "ucrt") for a in ("x64", "x86")] + [os.path.join(msvc_lib, a) for a in ("x64", "x86")]
+libdirs = [d for d in libdirs if os.path.isdir(d)]
+cmd = ["grep", "-rhoIE", "--include=*.gn", "--include=*.gni", "--include=*.cc", "--include=*.cpp", "--include=*.h", "--include=*.c",
+       "--exclude-dir=out", "--exclude-dir=node_modules", "--exclude-dir=.git", "--exclude-dir=llvm-build", "--exclude-dir=rust-toolchain",
+       r"[A-Za-z0-9_.+-]+\.[Ll][Ii][Bb]\b", src]
+libnames = set(subprocess.run(cmd, capture_output=True, text=True, errors="replace").stdout.split())
+libmade = 0
+for d in libdirs:
+    have = {f.lower(): f for f in os.listdir(d)}
+    for n in sorted(libnames):
+        real = have.get(n.lower())
+        if real and real != n and not os.path.lexists(os.path.join(d, n)):
+            os.symlink(real, os.path.join(d, n))
+            libmade += 1
+print(f"scanned {len(names)} distinct includes; created {made} header case symlinks ({skipped} already present) and {libmade} library case symlinks")
