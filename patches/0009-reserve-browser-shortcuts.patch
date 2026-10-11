@@ -1,0 +1,34 @@
+diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
+index 3741ba7671..652d76f4e2 100644
+--- a/chrome/browser/ui/browser_command_controller.cc
++++ b/chrome/browser/ui/browser_command_controller.cc
+@@ -189,6 +189,7 @@
+ 
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
+ #include "chrome/browser/ui/shortcuts/desktop_shortcuts_utils.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #endif  // BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
+ 
+ static_assert(BUILDFLAG(ENABLE_EXTENSIONS));
+@@ -483,6 +484,21 @@ bool BrowserCommandController::IsReservedCommandOrKey(
+     return false;
+   }
+ 
++  // JithuBrowser: browser shortcuts (find, new tab, reload, zoom, history,
++  // bookmarks, ...) are handled by the browser and never offered to the page,
++  // so a site cannot learn which shortcuts the user presses. Text-editing
++  // commands are excluded: web editors need to see them to work.
++  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserProtectKeyboard)) {
++    switch (command_id) {
++      case IDC_CUT:
++      case IDC_COPY:
++      case IDC_PASTE:
++        return false;
++      default:
++        return true;
++    }
++  }
++
+ #if BUILDFLAG(IS_CHROMEOS)
+   // On Chrome OS, the top row of keys are mapped to browser actions like
+   // back/forward or refresh. We don't want web pages to be able to change the

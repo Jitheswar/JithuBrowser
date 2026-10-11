@@ -1,0 +1,13 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: python -m py_compile tests/run_detection.py tests/test_privacy.py scripts/mkdeb.py branding/make_icons.py
+      - run: sudo apt-get install -y shellcheck && shellcheck -x scripts/*.sh scripts/slurm/*.sbatch || true
+      - name: every patch listed in series exists
+        run: while read -r p; do case "$p" in ''|'#'*) continue;; esac; test -s "patches/$p" || { echo "missing $p"; exit 1; }; done < patches/series

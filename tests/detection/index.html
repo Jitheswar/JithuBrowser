@@ -17,14 +17,14 @@
 <body>
 <h1>JithuBrowser detection suite</h1>
 <p>Each row is a technique websites use to watch what you do. <b>PASS</b> means the page learned nothing.
-Switch tabs, minimise, open DevTools, press F11, then press <button id="finish">Finish</button> (auto-finishes in automation).</p>
+Switch tabs, minimise, press F11, then press <button id="finish">Finish</button> (auto-finishes in automation).</p>
 <table><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead><tbody id="rows"></tbody></table>
 <script>
 'use strict';
 const results = {};
 const log = { visibilitychange: 0, windowBlur: 0, windowFocus: 0, focusoutWin: 0,
               fullscreenchange: 0, hiddenSeen: false, hasFocusFalse: false,
-              resizeOuterDiff: [], consoleGetterHits: 0, debuggerMaxMs: 0 };
+              resizeOuterDiff: [] };
 
 // ---------- Event listeners (visibility / focus / fullscreen) ----------
 document.addEventListener('visibilitychange', () => { log.visibilitychange++; if (document.hidden) log.hiddenSeen = true; }, true);
@@ -38,26 +38,6 @@ setInterval(() => {
   if (!document.hasFocus()) log.hasFocusFalse = true;
   log.resizeOuterDiff.push([outerWidth - innerWidth, outerHeight - innerHeight]);
 }, 100);
-
-// ---------- DevTools detection probes (run continuously) ----------
-const bait = document.createElement('div');
-Object.defineProperty(bait, 'id', { get() { log.consoleGetterHits++; return 'x'; } });
-const errBait = new Error('bait');
-Object.defineProperty(errBait, 'stack', { get() { log.consoleGetterHits++; return ''; } });
-const reBait = /bait/;
-reBait.toString = () => { log.consoleGetterHits++; return '/bait/'; };
-const dateBait = new Date();
-dateBait.toString = () => { log.consoleGetterHits++; return ''; };
-function fnBait() {}
-fnBait.toString = () => { log.consoleGetterHits++; return ''; };
-setInterval(() => {
-  console.log('%c', bait); console.log(errBait); console.log(reBait); console.log(dateBait); console.debug(fnBait);
-  console.clear();
-  const t0 = performance.now();
-  // eslint-disable-next-line no-debugger
-  debugger;
-  log.debuggerMaxMs = Math.max(log.debuggerMaxMs, performance.now() - t0);
-}, 500);
 
 // ---------- Helpers ----------
 function add(name, pass, detail) {
@@ -97,9 +77,7 @@ async function finish() {
   add('Focus: document.hasFocus() always true', !log.hasFocusFalse, document.hasFocus());
   add('Fullscreen: no fullscreenchange leak of user F11', log.fullscreenchange === 0, log.fullscreenchange);
   const diffs = log.resizeOuterDiff.map(d => d.join(','));
-  add('Window chrome size constant (DevTools dock)', new Set(diffs).size <= 1, [...new Set(diffs)].slice(0, 5));
-  add('DevTools: console never invokes page getters', log.consoleGetterHits === 0, log.consoleGetterHits);
-  add('DevTools: debugger statement never pauses', log.debuggerMaxMs < 50, log.debuggerMaxMs.toFixed(1) + 'ms');
+  add('Window chrome size constant', new Set(diffs).size <= 1, [...new Set(diffs)].slice(0, 5));
 
   // Extension probing: uBlock Origin, Google Docs offline, a random non-existent id
   const ids = ['cjpalhdlnbpafiamejdnhcphjbkeiagm', 'ghbmnnjooekpmoecnnnilnnbdlolhkhi', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'];

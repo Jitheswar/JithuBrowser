@@ -1,0 +1,49 @@
+diff --git a/third_party/blink/renderer/core/frame/history.cc b/third_party/blink/renderer/core/frame/history.cc
+index 21e46895f8..6568725366 100644
+--- a/third_party/blink/renderer/core/frame/history.cc
++++ b/third_party/blink/renderer/core/frame/history.cc
+@@ -30,6 +30,7 @@
+ #include "base/time/time.h"
+ #include "third_party/blink/public/common/scheduler/task_attribution_id.h"
+ #include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-shared.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "third_party/blink/renderer/bindings/core/v8/to_v8_traits.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_scroll_restoration.h"
+ #include "third_party/blink/renderer/core/dom/document.h"
+@@ -72,7 +73,13 @@ unsigned History::length(ExceptionState& exception_state) const {
+     return 0;
+   }
+ 
+-  return DomWindow()->GetFrame()->Client()->BackForwardLength();
++  unsigned length = DomWindow()->GetFrame()->Client()->BackForwardLength();
++  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideHistoryLength)) {
++    // JithuBrowser: only reveal whether there is anything to go back to,
++    // not how many pages were visited in this tab.
++    return std::min(length, 2u);
++  }
++  return length;
+ }
+ 
+ ScriptValue History::state(ScriptState* script_state,
+diff --git a/third_party/blink/renderer/core/frame/navigator.cc b/third_party/blink/renderer/core/frame/navigator.cc
+index 583f05f8dd..87f4a0ff62 100644
+--- a/third_party/blink/renderer/core/frame/navigator.cc
++++ b/third_party/blink/renderer/core/frame/navigator.cc
+@@ -34,6 +34,7 @@
+ #include "third_party/blink/renderer/core/page/page.h"
+ #include "third_party/blink/renderer/core/probe/core_probes.h"
+ #include "third_party/blink/renderer/platform/language.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ 
+ namespace blink {
+ 
+@@ -98,6 +99,9 @@ bool Navigator::cookieEnabled() const {
+ }
+ 
+ bool Navigator::webdriver() const {
++  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideAutomation)) {
++    return false;  // JithuBrowser: never advertise automation/remote control.
++  }
+   if (RuntimeEnabledFeatures::AutomationControlledEnabled())
+     return true;
+ 

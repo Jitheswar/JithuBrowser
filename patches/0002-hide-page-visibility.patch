@@ -1,0 +1,168 @@
+diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink/renderer/core/dom/document.cc
+index c72f2ef4c4..1e36829f56 100644
+--- a/third_party/blink/renderer/core/dom/document.cc
++++ b/third_party/blink/renderer/core/dom/document.cc
+@@ -82,6 +82,7 @@
+ #include "third_party/blink/public/platform/task_type.h"
+ #include "third_party/blink/public/platform/web_content_settings_client.h"
+ #include "third_party/blink/public/web/web_print_page_description.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "third_party/blink/renderer/bindings/core/v8/capture_source_location.h"
+ #include "third_party/blink/renderer/bindings/core/v8/frozen_array.h"
+ #include "third_party/blink/renderer/bindings/core/v8/isolated_world_csp.h"
+@@ -2323,10 +2324,19 @@ bool Document::prerendering() const {
+ }
+ 
+ bool Document::hidden() const {
++  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility)) {
++    // JithuBrowser: script never learns about tab switches or minimising.
++    // Only report "hidden" while the document is really going away.
++    return !GetFrame() || !GetFrame()->GetPage() ||
++           load_event_progress_ >= kUnloadVisibilityChangeInProgress;
++  }
+   return !IsPageVisible();
+ }
+ 
+ bool Document::wasDiscarded() const {
++  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility)) {
++    return false;
++  }
+   return was_discarded_;
+ }
+ 
+@@ -2342,10 +2352,12 @@ void Document::DidChangeVisibilityState() {
+     // tab and update the visibility state.
+     return;
+   }
+-  DispatchEvent(*Event::CreateBubble(event_type_names::kVisibilitychange));
+-  // Also send out the deprecated version until it can be removed.
+-  DispatchEvent(
+-      *Event::CreateBubble(event_type_names::kWebkitvisibilitychange));
++  if (!base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility)) {
++    DispatchEvent(*Event::CreateBubble(event_type_names::kVisibilitychange));
++    // Also send out the deprecated version until it can be removed.
++    DispatchEvent(
++        *Event::CreateBubble(event_type_names::kWebkitvisibilitychange));
++  }
+ 
+   if (IsPageVisible())
+     GetDocumentAnimations().MarkAnimationsCompositorPending();
+@@ -4731,7 +4743,9 @@ void Document::DispatchUnloadEvents(
+   // kUnloadVisibilityChangeInProgress because that would change the result.
+   bool page_visible = IsPageVisible();
+   load_event_progress_ = kUnloadVisibilityChangeInProgress;
+-  if (page_visible) {
++  // JithuBrowser: script was never told the page became hidden, so always give
++  // it the final visibilitychange on unload (lets sites save state).
++  if (page_visible || base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility)) {
+     // Dispatch visibilitychange event, but don't bother doing
+     // other notifications as we're about to be unloaded.
+     DispatchEvent(*Event::CreateBubble(event_type_names::kVisibilitychange));
+@@ -4762,7 +4776,9 @@ void Document::DispatchUnloadEvents(
+ 
+ void Document::DispatchFreezeEvent() {
+   SetFreezingInProgress(true);
+-  DispatchEvent(*Event::Create(event_type_names::kFreeze));
++  if (!base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility)) {
++    DispatchEvent(*Event::Create(event_type_names::kFreeze));
++  }
+   SetFreezingInProgress(false);
+   UseCounter::Count(*this, WebFeature::kPageLifeCycleFreeze);
+ }
+diff --git a/third_party/blink/renderer/core/frame/local_frame.cc b/third_party/blink/renderer/core/frame/local_frame.cc
+index 3960cc4f1f..2bd691bb36 100644
+--- a/third_party/blink/renderer/core/frame/local_frame.cc
++++ b/third_party/blink/renderer/core/frame/local_frame.cc
+@@ -91,6 +91,7 @@
+ #include "third_party/blink/public/web/web_content_capture_client.h"
+ #include "third_party/blink/public/web/web_frame.h"
+ #include "third_party/blink/public/web/web_local_frame_client.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_local_compile_hints_producer.h"
+@@ -3536,7 +3537,9 @@ void LocalFrame::DidResume() {
+   // event.
+   DCHECK_NE(DomWindow()->ContextPauseState(),
+             mojom::blink::FrameLifecycleState::kFrozen);
+-  GetDocument()->DispatchEvent(*Event::Create(event_type_names::kResume));
++  if (!base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility)) {
++    GetDocument()->DispatchEvent(*Event::Create(event_type_names::kResume));
++  }
+   // TODO(fmeawad): Move the following logic to the page once we have a
+   // PageResourceCoordinator in Blink
+   if (auto* document_resource_coordinator =
+diff --git a/third_party/blink/renderer/core/timing/window_performance.cc b/third_party/blink/renderer/core/timing/window_performance.cc
+index 4d099fc3c7..ed0f1decfc 100644
+--- a/third_party/blink/renderer/core/timing/window_performance.cc
++++ b/third_party/blink/renderer/core/timing/window_performance.cc
+@@ -53,6 +53,7 @@
+ #include "third_party/blink/public/common/frame/frame_owner_element_type.h"
+ #include "third_party/blink/public/platform/platform.h"
+ #include "third_party/blink/public/platform/task_type.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_cross_origin_mode.h"
+@@ -314,7 +315,8 @@ WindowPerformance::WindowPerformance(LocalDOMWindow* window)
+   }
+ 
+   DCHECK(GetPage());
+-  AddVisibilityStateEntry(GetPage()->IsPageVisible(), base::TimeTicks());
++  AddVisibilityStateEntry(GetPage()->IsPageVisible() || base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility),
++                          base::TimeTicks());
+ }
+ 
+ WindowPerformance::~WindowPerformance() = default;
+@@ -1651,6 +1653,9 @@ void WindowPerformance::PageVisibilityChangedWithTimestamp(
+     // becomes hidden, to ensure they are not lost if the page is discarded.
+     FlushPerformanceEntries();
+   }
++  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility)) {
++    return;  // JithuBrowser: no visibility-state timeline entries.
++  }
+   AddVisibilityStateEntry(GetPage()->IsPageVisible(),
+                           visibility_change_timestamp);
+ }
+diff --git a/content/browser/service_worker/service_worker_client_utils.cc b/content/browser/service_worker/service_worker_client_utils.cc
+index 25e4ecab59..7574a9a88a 100644
+--- a/content/browser/service_worker/service_worker_client_utils.cc
++++ b/content/browser/service_worker/service_worker_client_utils.cc
+@@ -50,6 +50,7 @@
+ #include "services/network/public/mojom/network_context.mojom.h"
+ #include "third_party/blink/public/common/storage_key/storage_key.h"
+ #include "third_party/blink/public/mojom/loader/request_context_frame_type.mojom.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "ui/base/window_open_disposition.h"
+ #include "url/gurl.h"
+ #include "url/origin.h"
+@@ -154,17 +155,26 @@ blink::mojom::ServiceWorkerClientInfoPtr GetWindowClientInfo(
+ 
+   PageVisibilityState visibility = render_frame_host->GetVisibilityState();
+   bool page_hidden = visibility != PageVisibilityState::kVisible;
++  // JithuBrowser: clients.matchAll() must not reveal which tabs are hidden,
++  // frozen or focused, nor the order in which the user focused them.
++  const bool hide_visibility = base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility);
++  const bool hide_focus = base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideFocus);
++  if (hide_visibility) {
++    page_hidden = false;
++  }
+   return blink::mojom::ServiceWorkerClientInfo::New(
+       url,
+       render_frame_host->GetParent() && !render_frame_host->IsFencedFrameRoot()
+           ? blink::mojom::RequestContextFrameType::kNested
+           : blink::mojom::RequestContextFrameType::kTopLevel,
+       client_uuid, blink::mojom::ServiceWorkerClientType::kWindow, page_hidden,
+-      render_frame_host->IsFocused(),
+-      render_frame_host->IsFrozen()
++      hide_focus || render_frame_host->IsFocused(),
++      render_frame_host->IsFrozen() && !hide_visibility
+           ? blink::mojom::ServiceWorkerClientLifecycleState::kFrozen
+           : blink::mojom::ServiceWorkerClientLifecycleState::kActive,
+-      render_frame_host->frame_tree_node()->last_focus_time(), create_time);
++      hide_focus ? create_time
++                 : render_frame_host->frame_tree_node()->last_focus_time(),
++      create_time);
+ }
+ 
+ // This is only called for main frame navigations in OpenWindow().

@@ -7,7 +7,6 @@ blink_symbol_level = 0
 v8_symbol_level = 0
 dcheck_always_on = false
 treat_warnings_as_errors = false
-enable_nacl = false
 
 # Site compatibility: same media capabilities as Google Chrome.
 proprietary_codecs = true

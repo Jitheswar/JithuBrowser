@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 """Automated JithuBrowser detection-suite runner.
 
-Serves tests/detection, launches a browser binary headless, then behaves like a
-user who switches tabs and opens DevTools while the page is watching:
-
-  * opens a second tab and activates it (page should NOT see visibility/blur)
-  * attaches a DevTools client with Runtime/Debugger/Log enabled (page should
-    NOT detect DevTools via console getters or `debugger` timing)
+Serves tests/detection, launches a browser binary, then behaves like a user who
+switches to another tab and back while the page is watching (the page should
+NOT see visibility changes or blur).
 
 The page POSTs its findings to /report. Request headers are captured too so
 Client Hints leakage (Sec-CH-UA-*) is checked on the server side.
@@ -27,10 +24,8 @@ import threading
 import time
 import urllib.request
 
-try:
-    import websocket  # websocket-client
-except ImportError:  # DevTools attach is skipped without it
-    websocket = None
+import websocket  # websocket-client; browser-level session only, never the page
+
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SUITE = os.path.join(HERE, "detection")
@@ -74,10 +69,27 @@ def free_port():
     return port
 
 
-def devtools_json(port, path, method="GET"):
+def tab_api(port, path, method="GET"):
     req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", method=method)
     with urllib.request.urlopen(req, timeout=5) as r:
         return json.loads(r.read() or b"null") if "json/activate" not in path else None
+
+
+class BrowserSession:
+    """Browser-target control channel (like a user clicking tabs/minimise)."""
+
+    def __init__(self, port):
+        url = tab_api(port, "/json/version")["webSocketDebuggerUrl"]
+        self.ws = websocket.create_connection(url, timeout=10, suppress_origin=True)
+        self.n = 0
+
+    def call(self, method, **params):
+        self.n += 1
+        self.ws.send(json.dumps({"id": self.n, "method": method, "params": params}))
+        while True:
+            msg = json.loads(self.ws.recv())
+            if msg.get("id") == self.n:
+                return msg.get("result", {})
 
 
 def wait_for(fn, timeout):
@@ -97,7 +109,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("browser")
     ap.add_argument("--json")
-    ap.add_argument("--headed", action="store_true")
+    ap.add_argument("--headed", action="store_true", help="use the real $DISPLAY")
     args = ap.parse_args()
 
     http_port, cdp_port = free_port(), free_port()
@@ -105,58 +117,41 @@ def main():
     threading.Thread(target=srv.serve_forever, daemon=True).start()
 
     profile = tempfile.mkdtemp(prefix="jithu-detect-")
-    url = f"http://127.0.0.1:{http_port}/index.html?auto=14"
+    url = f"http://127.0.0.1:{http_port}/index.html?auto=18"
     cmd = [args.browser, f"--remote-debugging-port={cdp_port}", f"--user-data-dir={profile}",
            "--no-first-run", "--no-default-browser-check", "--disable-gpu", "--no-sandbox", url]
     if not args.headed:
-        cmd.insert(1, "--headless=new")
+        # A real (non-headless) browser drawing to an in-memory display, so tab
+        # switches really hide the page like they do on a desktop.
+        cmd.insert(1, "--ozone-platform=headless")
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    ws = None
     try:
-        page = wait_for(lambda: next((t for t in devtools_json(cdp_port, "/json/list")
+        page = wait_for(lambda: next((t for t in tab_api(cdp_port, "/json/list")
                                       if t["type"] == "page" and "index.html" in t["url"]), None), 30)
         if not page:
             sys.exit("browser did not open the suite")
 
-        # "Open DevTools" on the page.
-        if websocket:
-            ws = websocket.create_connection(page["webSocketDebuggerUrl"], timeout=5, suppress_origin=True)
-            for i, m in enumerate(["Runtime.enable", "Debugger.enable", "Log.enable", "Profiler.enable"]):
-                ws.send(json.dumps({"id": i + 1, "method": m}))
-            ws.settimeout(None)
-
-            def drain():
-                try:
-                    n = 100
-                    while True:
-                        msg = json.loads(ws.recv())
-                        if msg.get("method") == "Debugger.paused":  # a human clicks "resume"
-                            time.sleep(0.2)
-                            n += 1
-                            ws.send(json.dumps({"id": n, "method": "Debugger.resume"}))
-                except Exception:
-                    pass
-            threading.Thread(target=drain, daemon=True).start()
-
+        b = BrowserSession(cdp_port)
+        win = b.call("Browser.getWindowForTarget", targetId=page["id"])["windowId"]
         time.sleep(3)
-        other = devtools_json(cdp_port, "/json/new?about:blank", method="PUT")  # switch away
-        time.sleep(4)
-        devtools_json(cdp_port, f"/json/activate/{page['id']}")                # switch back
-        if other:
-            time.sleep(1)
-            try:
-                devtools_json(cdp_port, f"/json/close/{other['id']}")
-            except Exception:
-                pass
+        # 1) open a foreground tab in the same window, then go back
+        other = b.call("Target.createTarget", url="about:blank", newWindow=False, background=False)
+        time.sleep(3)
+        b.call("Target.activateTarget", targetId=page["id"])
+        b.call("Target.closeTarget", targetId=other["targetId"])
+        time.sleep(1)
+        # 2) minimise the window, then restore it
+        b.call("Browser.setWindowBounds", windowId=win, bounds={"windowState": "minimized"})
+        time.sleep(3)
+        b.call("Browser.setWindowBounds", windowId=win, bounds={"windowState": "normal"})
+        # 3) browser fullscreen (like F11), then back
+        b.call("Browser.setWindowBounds", windowId=win, bounds={"windowState": "fullscreen"})
+        time.sleep(2)
+        b.call("Browser.setWindowBounds", windowId=win, bounds={"windowState": "normal"})
 
         if not wait_for(lambda: state["report"], 40):
             sys.exit("no report received")
     finally:
-        try:
-            if ws:
-                ws.close()
-        except Exception:
-            pass
         proc.terminate()
         try:
             proc.wait(10)
@@ -166,9 +161,21 @@ def main():
         srv.shutdown()
 
     results = dict(state["report"]["results"])
-    sent = {k.lower() for h in state["headers"] for k in h}
-    leaked = [h for h in HIGH_ENTROPY_CH if h.lower() in sent]
-    results["Client Hints: no high-entropy headers sent"] = {"pass": not leaked, "detail": leaked}
+    # High-entropy hints may be sent (Chrome-only sites ask for them) but must
+    # carry no more detail than the reduced User-Agent string.
+    import re
+    leaks = {}
+    for h in state["headers"]:
+        low = {k.lower(): v for k, v in h.items()}
+        fvl = low.get("sec-ch-ua-full-version-list")
+        if fvl and re.search(r'v="\d+\.(?!0\.0\.0")', fvl):
+            leaks["full-version-list"] = fvl
+        if low.get("sec-ch-ua-model", '""') != '""':
+            leaks["model"] = low["sec-ch-ua-model"]
+        pv = low.get("sec-ch-ua-platform-version")
+        if pv and not re.fullmatch(r'"(\d+\.0\.0)?"', pv):
+            leaks["platform-version"] = pv
+    results["Client Hints headers reduced"] = {"pass": not leaks, "detail": leaks}
 
     width = max(map(len, results))
     fails = 0

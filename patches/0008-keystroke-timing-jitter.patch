@@ -1,0 +1,58 @@
+diff --git a/third_party/blink/renderer/core/events/keyboard_event.cc b/third_party/blink/renderer/core/events/keyboard_event.cc
+index 7f91061eb3..c6eaaf1a87 100644
+--- a/third_party/blink/renderer/core/events/keyboard_event.cc
++++ b/third_party/blink/renderer/core/events/keyboard_event.cc
+@@ -22,9 +22,14 @@
+ 
+ #include "third_party/blink/renderer/core/events/keyboard_event.h"
+ 
++#include <algorithm>
++
++#include "base/rand_util.h"
++#include "base/time/time.h"
+ #include "build/build_config.h"
+ #include "third_party/blink/public/common/input/web_input_event.h"
+ #include "third_party/blink/public/platform/platform.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_keyboard_event_init.h"
+ #include "third_party/blink/renderer/core/editing/ime/input_method_controller.h"
+ #include "third_party/blink/renderer/core/event_interface_names.h"
+@@ -41,6 +46,29 @@ namespace blink {
+ 
+ namespace {
+ 
++// JithuBrowser: typing rhythm (dwell and flight times between key events) is a
++// well-known behavioural biometric. Event timestamps are shifted back by a
++// small random amount, kept monotonic and never in the future, so intervals
++// between keystrokes no longer identify the typist. Delivery order and timing
++// of the events themselves (and so preventDefault) are unchanged.
++base::TimeTicks JithuBrowserJitterKeyTimeStamp(base::TimeTicks ts) {
++  if (!base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserKeystrokeJitter) || ts.is_null()) {
++    return ts;
++  }
++  thread_local base::TimeTicks last_stamp;
++  const int max_ms = jithubrowser::features::kJithuBrowserKeystrokeJitterMaxMs.Get();
++  base::TimeTicks jittered =
++      ts - base::Microseconds(base::RandInt(0, std::max(0, max_ms) * 1000));
++  if (jittered < last_stamp) {
++    jittered = last_stamp;
++  }
++  if (jittered > ts) {
++    jittered = ts;
++  }
++  last_stamp = jittered;
++  return jittered;
++}
++
+ const AtomicString& EventTypeForKeyboardEventType(WebInputEvent::Type type) {
+   switch (type) {
+     case WebInputEvent::Type::kKeyUp:
+@@ -107,7 +135,7 @@ KeyboardEvent::KeyboardEvent(const WebKeyboardEvent& key,
+           dom_window,
+           0,
+           static_cast<WebInputEvent::Modifiers>(key.GetModifiers()),
+-          key.TimeStamp(),
++          JithuBrowserJitterKeyTimeStamp(key.TimeStamp()),
+           dom_window
+               ? dom_window->GetInputDeviceCapabilities()->FiresTouchEvents(
+                     false)

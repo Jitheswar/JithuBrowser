@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
-# Apply patches/series to the Chromium checkout (idempotent: resets first).
+# Apply patches/series to the Chromium checkout. Resets the main repo and the
+# v8 / devtools-frontend sub-repos first unless --no-reset is given.
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
 cd "$JB_SRC"
 if [ "${1:-}" != "--no-reset" ]; then
-  git reset -q --hard "refs/tags/$JB_CHROMIUM_VERSION" 2>/dev/null || git reset -q --hard HEAD
-  git clean -qfd -e out/ -e '*.pyc' -- chrome components content third_party/blink v8 extensions services ui net
+  for repo in . v8 third_party/devtools-frontend/src; do
+    git -C "$repo" checkout -q -- .
+    git -C "$repo" clean -qfd -e out/ -e '*.pyc' -- $( [ "$repo" = . ] && echo chrome components content third_party/blink extensions services ui net || echo . )
+  done
 fi
 while read -r p; do
   case "$p" in ''|'#'*) continue ;; esac
   echo "applying $p"
-  git apply --whitespace=nowarn -p1 "$JB_ROOT/patches/$p"
+  patch -p1 --forward --no-backup-if-mismatch -s -i "$JB_ROOT/patches/$p"
 done < "$JB_ROOT/patches/series"
 "$JB_ROOT/scripts/branding.sh"
 echo "all patches applied"

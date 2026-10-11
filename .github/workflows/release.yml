@@ -1,0 +1,49 @@
+name: release
+# Chromium needs ~100-150 GB disk and many CPU-hours, more than GitHub-hosted
+# runners allow, so builds run on self-hosted runners labelled as below.
+# Register runners:  Settings > Actions > Runners > New self-hosted runner.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: [self-hosted, linux, x64, chromium-build]
+    timeout-minutes: 1440
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/fetch.sh
+      - run: ./scripts/apply-patches.sh
+      - run: ./scripts/build.sh
+      - run: ./scripts/package-linux.sh
+      - uses: actions/upload-artifact@v4
+        with: { name: linux, path: dist/ }
+
+  windows:
+    runs-on: [self-hosted, windows, x64, chromium-build]
+    timeout-minutes: 1440
+    steps:
+      - uses: actions/checkout@v4
+      - run: powershell -ExecutionPolicy Bypass -File scripts\windows\build.ps1
+      - run: powershell -ExecutionPolicy Bypass -File scripts\windows\package.ps1
+      - uses: actions/upload-artifact@v4
+        with: { name: windows, path: dist/ }
+
+  publish:
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.tar.xz
+            dist/*.exe
+            dist/*.zip
+            dist/SHA256SUMS*
+          generate_release_notes: true

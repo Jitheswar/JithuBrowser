@@ -1,0 +1,155 @@
+diff --git a/third_party/blink/renderer/core/frame/local_dom_window.cc b/third_party/blink/renderer/core/frame/local_dom_window.cc
+index 0269587971..acca980fdd 100644
+--- a/third_party/blink/renderer/core/frame/local_dom_window.cc
++++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
+@@ -26,6 +26,9 @@
+ 
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ 
++#include "third_party/blink/renderer/core/frame/web_frame_widget_impl.h"
++#include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
++
+ #include <memory>
+ #include <optional>
+ #include <utility>
+@@ -50,6 +53,7 @@
+ #include "third_party/blink/public/platform/task_type.h"
+ #include "third_party/blink/public/platform/web_string.h"
+ #include "third_party/blink/public/web/web_picture_in_picture_window_options.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "third_party/blink/renderer/bindings/core/v8/binding_security.h"
+ #include "third_party/blink/renderer/bindings/core/v8/capture_source_location.h"
+ #include "third_party/blink/renderer/bindings/core/v8/isolated_world_csp.h"
+@@ -176,6 +180,40 @@
+ 
+ namespace blink {
+ 
++namespace {
++
++// JithuBrowser: height reported for browser chrome (tab strip + toolbar) so
++// outerHeight looks like an ordinary maximised Chrome window.
++constexpr int kJithuBrowserChromeHeight = 85;
++
++// JithuBrowser: window.outer{Width,Height} are derived from the outermost main
++// frame's visible viewport instead of the real OS window, so the OS window
++// size, side panels, page zoom and F11 fullscreen are not observable. Subframe
++// widgets (including out-of-process iframes) receive the main frame's visible
++// viewport from the browser, so every frame reports the same values.
++std::optional<gfx::Size> JithuBrowserOuterSize(LocalFrame* frame) {
++  if (!base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
++    return std::nullopt;
++  }
++  WebLocalFrameImpl* web_frame = WebLocalFrameImpl::FromFrame(frame);
++  if (!web_frame || !web_frame->LocalRootFrameWidget() || !frame->GetPage()) {
++    return std::nullopt;
++  }
++  gfx::Size device_px =
++      web_frame->LocalRootFrameWidget()->VisibleViewportSize();
++  float dsf = frame->GetPage()
++                  ->GetChromeClient()
++                  .GetScreenInfo(*frame)
++                  .device_scale_factor;
++  if (device_px.IsEmpty() || dsf <= 0) {
++    return std::nullopt;
++  }
++  gfx::Size dips = gfx::ScaleToCeiledSize(device_px, 1.f / dsf);
++  return gfx::Size(dips.width(), dips.height() + kJithuBrowserChromeHeight);
++}
++
++}  // namespace
++
+ namespace {
+ bool IsRunningMicrotasks(ScriptState* script_state) {
+   if (auto* microtask_queue = ToMicrotaskQueue(script_state)) {
+@@ -1685,6 +1723,10 @@ int LocalDOMWindow::outerHeight() const {
+     return 0;
+   }
+ 
++  if (auto jithu_size = JithuBrowserOuterSize(frame)) {
++    return jithu_size->height();
++  }
++
+   ChromeClient& chrome_client = page->GetChromeClient();
+   if (page->GetSettings().GetReportScreenSizeInPhysicalPixelsQuirk()) {
+     return static_cast<int>(
+@@ -1717,6 +1759,10 @@ int LocalDOMWindow::outerWidth() const {
+     return 0;
+   }
+ 
++  if (auto jithu_size = JithuBrowserOuterSize(frame)) {
++    return jithu_size->width();
++  }
++
+   ChromeClient& chrome_client = page->GetChromeClient();
+   if (page->GetSettings().GetReportScreenSizeInPhysicalPixelsQuirk()) {
+     return static_cast<int>(
+@@ -1784,8 +1830,8 @@ int LocalDOMWindow::innerWidth() const {
+ 
+ int LocalDOMWindow::screenX() const {
+   LocalFrame* frame = GetFrame();
+-  if (!frame) {
+-    return 0;
++  if (!frame || base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
++    return 0;  // JithuBrowser: window position is not exposed.
+   }
+ 
+   Page* page = frame->GetPage();
+@@ -1809,8 +1855,8 @@ int LocalDOMWindow::screenX() const {
+ 
+ int LocalDOMWindow::screenY() const {
+   LocalFrame* frame = GetFrame();
+-  if (!frame) {
+-    return 0;
++  if (!frame || base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
++    return 0;  // JithuBrowser: window position is not exposed.
+   }
+ 
+   Page* page = frame->GetPage();
+diff --git a/third_party/blink/renderer/core/css/media_query_evaluator.cc b/third_party/blink/renderer/core/css/media_query_evaluator.cc
+index 304fd4efd3..d1cb64b964 100644
+--- a/third_party/blink/renderer/core/css/media_query_evaluator.cc
++++ b/third_party/blink/renderer/core/css/media_query_evaluator.cc
+@@ -29,6 +29,8 @@
+ 
+ #include "third_party/blink/renderer/core/css/media_query_evaluator.h"
+ 
++#include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
++
+ #include "base/functional/function_ref.h"
+ #include "base/notreached.h"
+ #include "third_party/blink/public/common/css/forced_colors.h"
+@@ -37,6 +39,7 @@
+ #include "third_party/blink/public/mojom/device_posture/device_posture_provider.mojom-blink.h"
+ #include "third_party/blink/public/mojom/manifest/display_mode.mojom-blink.h"
+ #include "third_party/blink/public/mojom/webpreferences/web_preferences.mojom-blink.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "third_party/blink/renderer/core/css/auto_registration.h"
+ #include "third_party/blink/renderer/core/css/css_container_values.h"
+ #include "third_party/blink/renderer/core/css/css_primitive_value.h"
+@@ -391,6 +394,13 @@ static bool DisplayModeMediaFeatureEval(const MediaQueryExpValue& value,
+   }
+ 
+   mojom::blink::DisplayMode mode = media_values.DisplayMode();
++  // JithuBrowser: browser fullscreen (F11) looks like a normal browser window.
++  // Fullscreen the page requested itself (e.g. a video player) is still
++  // reported, since the page already knows about it.
++  if (mode == mojom::blink::DisplayMode::kFullscreen && base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideWindowGeometry) &&
++      !Fullscreen::HasFullscreenElements()) {
++    mode = mojom::blink::DisplayMode::kBrowser;
++  }
+ 
+   switch (value.Id()) {
+     case CSSValueID::kFullscreen:
+@@ -429,6 +439,12 @@ static bool DisplayStateMediaFeatureEval(const MediaQueryExpValue& value,
+   }
+ 
+   ui::mojom::blink::WindowShowState state = media_values.WindowShowState();
++  // JithuBrowser: never reveal whether the window is minimised, maximised or
++  // in browser fullscreen.
++  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideWindowGeometry) && !(state == ui::mojom::blink::WindowShowState::kFullscreen &&
++                Fullscreen::HasFullscreenElements())) {
++    state = ui::mojom::blink::WindowShowState::kNormal;
++  }
+ 
+   switch (value.Id()) {
+     case CSSValueID::kFullscreen:

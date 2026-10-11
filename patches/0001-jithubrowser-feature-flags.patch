@@ -1,0 +1,118 @@
+diff --git a/third_party/blink/common/BUILD.gn b/third_party/blink/common/BUILD.gn
+index 8e635b0da3..c37d7fd29b 100644
+--- a/third_party/blink/common/BUILD.gn
++++ b/third_party/blink/common/BUILD.gn
+@@ -151,6 +151,7 @@ source_set("common") {
+     "device_memory/approximated_device_memory.cc",
+     "dom_storage/session_storage_namespace_id.cc",
+     "features.cc",
++    "jithubrowser_features.cc",
+     "fenced_frame/fenced_frame_utils.cc",
+     "fenced_frame/redacted_fenced_frame_config.cc",
+     "fenced_frame/redacted_fenced_frame_config_mojom_traits.cc",
+diff --git a/third_party/blink/common/jithubrowser_features.cc b/third_party/blink/common/jithubrowser_features.cc
+new file mode 100644
+index 0000000000..643d691600
+--- /dev/null
++++ b/third_party/blink/common/jithubrowser_features.cc
+@@ -0,0 +1,22 @@
++// Copyright 2026 The JithuBrowser Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "third_party/blink/public/common/jithubrowser_features.h"
++
++namespace jithubrowser::features {
++
++BASE_FEATURE(kJithuBrowserHideVisibility, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kJithuBrowserHideFocus, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kJithuBrowserHideWindowGeometry, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kJithuBrowserHideHistoryLength, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kJithuBrowserHideAutomation, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kJithuBrowserReduceClientHints, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kJithuBrowserProtectKeyboard, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kJithuBrowserKeystrokeJitter, base::FEATURE_ENABLED_BY_DEFAULT);
++const base::FeatureParam<int> kJithuBrowserKeystrokeJitterMaxMs{
++    &kJithuBrowserKeystrokeJitter, "max_ms", 30};
++BASE_FEATURE(kJithuBrowserHideExtensions, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kJithuBrowserBackgroundRealism, base::FEATURE_ENABLED_BY_DEFAULT);
++
++}  // namespace jithubrowser::features
+diff --git a/third_party/blink/public/common/BUILD.gn b/third_party/blink/public/common/BUILD.gn
+index 5a5d9a64a4..60e082e35d 100644
+--- a/third_party/blink/public/common/BUILD.gn
++++ b/third_party/blink/public/common/BUILD.gn
+@@ -144,6 +144,7 @@ source_set("headers") {
+     "dom/dom_node_id.h",
+     "dom_storage/session_storage_namespace_id.h",
+     "features.h",
++    "jithubrowser_features.h",
+     "fenced_frame/fenced_frame_utils.h",
+     "fenced_frame/redacted_fenced_frame_config.h",
+     "fenced_frame/redacted_fenced_frame_config_mojom_traits.h",
+diff --git a/third_party/blink/public/common/jithubrowser_features.h b/third_party/blink/public/common/jithubrowser_features.h
+new file mode 100644
+index 0000000000..dc42470a2b
+--- /dev/null
++++ b/third_party/blink/public/common/jithubrowser_features.h
+@@ -0,0 +1,60 @@
++// Copyright 2026 The JithuBrowser Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef THIRD_PARTY_BLINK_PUBLIC_COMMON_JITHUBROWSER_FEATURES_H_
++#define THIRD_PARTY_BLINK_PUBLIC_COMMON_JITHUBROWSER_FEATURES_H_
++
++#include "base/feature_list.h"
++#include "third_party/blink/public/common/common_export.h"
++
++// JithuBrowser privacy protections. Every protection is enabled by default and can
++// be turned off individually from chrome://flags or --disable-features=.
++namespace jithubrowser::features {
++
++// Page Visibility API always reports "visible"; no visibilitychange,
++// visibility-state performance entries, freeze/resume events or wasDiscarded.
++BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserHideVisibility);
++
++// Pages always believe their window is focused: no window blur/focus events,
++// document.hasFocus() stays true, :focus is not lost when switching windows.
++BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserHideFocus);
++
++// Window geometry is not a fingerprint and does not reveal F11 fullscreen:
++// outerWidth/outerHeight follow the viewport, screenX/Y are 0 and the
++// display-mode media query never matches "fullscreen" for browser fullscreen.
++BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserHideWindowGeometry);
++
++// history.length never reveals how many pages were visited in this tab.
++BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserHideHistoryLength);
++
++// navigator.webdriver is always false.
++BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserHideAutomation);
++
++// The User-Agent string and Client Hints look like stock Google Chrome, with
++// high-entropy hints reduced (no model, no exact versions).
++BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserReduceClientHints);
++
++// The keyboard layout map is standard US, so the user's layout/language
++// cannot be fingerprinted.
++BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserProtectKeyboard);
++
++// Keyboard events are delivered with a small random delay (order preserved)
++// so typing rhythm cannot be used as a biometric fingerprint.
++BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserKeystrokeJitter);
++
++// Maximum keystroke delay in milliseconds for kJithuBrowserKeystrokeJitter.
++BLINK_COMMON_EXPORT extern const base::FeatureParam<int>
++    kJithuBrowserKeystrokeJitterMaxMs;
++
++// Web pages cannot probe chrome-extension:// URLs to learn which extensions
++// are installed (web accessible resources only load via per-session URLs).
++BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserHideExtensions);
++
++// Background tabs behave like foreground tabs as far as script can tell:
++// timers and requestAnimationFrame are not throttled, media is not paused.
++BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserBackgroundRealism);
++
++}  // namespace jithubrowser::features
++
++#endif  // THIRD_PARTY_BLINK_PUBLIC_COMMON_JITHUBROWSER_FEATURES_H_

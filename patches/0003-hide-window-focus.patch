@@ -1,0 +1,35 @@
+diff --git a/third_party/blink/renderer/core/page/focus_controller.cc b/third_party/blink/renderer/core/page/focus_controller.cc
+index 864c2c8ebc..66b5758aaf 100644
+--- a/third_party/blink/renderer/core/page/focus_controller.cc
++++ b/third_party/blink/renderer/core/page/focus_controller.cc
+@@ -33,6 +33,7 @@
+ #include "base/containers/adapters.h"
+ #include "base/memory/stack_allocated.h"
+ #include "third_party/blink/public/mojom/input/focus_type.mojom-blink.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
+ #include "third_party/blink/renderer/core/dom/column_pseudo_element.h"
+ #include "third_party/blink/renderer/core/dom/container_node.h"
+@@ -1757,7 +1758,11 @@ FocusController::FocusController(Page* page)
+       is_active_(false),
+       is_focused_(false),
+       is_changing_focused_frame_(false),
+-      is_emulating_focus_(false) {}
++      // JithuBrowser: the page always believes its window is focused and
++      // active, so switching windows/tabs never fires blur/focus events and
++      // document.hasFocus() stays true. Focus movement inside the page still
++      // works normally.
++      is_emulating_focus_(base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideFocus)) {}
+ 
+ // static
+ const ContainerNode* FocusController::ReadingFlowContainerOrDisplayContents(
+@@ -1992,6 +1997,9 @@ void FocusController::SetFocused(bool focused) {
+ }
+ 
+ void FocusController::SetFocusEmulationEnabled(bool emulate_focus) {
++  // DevTools must not be able to turn off JithuBrowser's focus protection
++  // (that would itself be observable by the page).
++  emulate_focus = emulate_focus || base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideFocus);
+   if (emulate_focus == is_emulating_focus_)
+     return;
+   bool active = IsActive();

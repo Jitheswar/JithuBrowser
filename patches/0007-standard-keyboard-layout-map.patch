@@ -1,0 +1,77 @@
+diff --git a/third_party/blink/renderer/modules/keyboard/keyboard_layout.cc b/third_party/blink/renderer/modules/keyboard/keyboard_layout.cc
+index e2b697b768..66ff9d3fee 100644
+--- a/third_party/blink/renderer/modules/keyboard/keyboard_layout.cc
++++ b/third_party/blink/renderer/modules/keyboard/keyboard_layout.cc
+@@ -7,6 +7,7 @@
+ #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
+ #include "third_party/blink/public/platform/platform.h"
+ #include "third_party/blink/public/platform/task_type.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "third_party/blink/renderer/core/dom/dom_exception.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+@@ -91,6 +92,64 @@ void KeyboardLayout::GotKeyboardLayoutMap(
+   DCHECK(is_request_pending_);
+   is_request_pending_ = false;
+ 
++  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserProtectKeyboard)) {
++    // JithuBrowser: always report a standard US QWERTY layout so the user's
++    // physical keyboard layout and language cannot be used to fingerprint or
++    // geolocate them. Character input is unaffected.
++    HashMap<String, String> map;
++    map.insert(String("Backquote"), String("`"));
++    map.insert(String("Digit1"), String("1"));
++    map.insert(String("Digit2"), String("2"));
++    map.insert(String("Digit3"), String("3"));
++    map.insert(String("Digit4"), String("4"));
++    map.insert(String("Digit5"), String("5"));
++    map.insert(String("Digit6"), String("6"));
++    map.insert(String("Digit7"), String("7"));
++    map.insert(String("Digit8"), String("8"));
++    map.insert(String("Digit9"), String("9"));
++    map.insert(String("Digit0"), String("0"));
++    map.insert(String("Minus"), String("-"));
++    map.insert(String("Equal"), String("="));
++    map.insert(String("KeyQ"), String("q"));
++    map.insert(String("KeyW"), String("w"));
++    map.insert(String("KeyE"), String("e"));
++    map.insert(String("KeyR"), String("r"));
++    map.insert(String("KeyT"), String("t"));
++    map.insert(String("KeyY"), String("y"));
++    map.insert(String("KeyU"), String("u"));
++    map.insert(String("KeyI"), String("i"));
++    map.insert(String("KeyO"), String("o"));
++    map.insert(String("KeyP"), String("p"));
++    map.insert(String("BracketLeft"), String("["));
++    map.insert(String("BracketRight"), String("]"));
++    map.insert(String("Backslash"), String("\\"));
++    map.insert(String("KeyA"), String("a"));
++    map.insert(String("KeyS"), String("s"));
++    map.insert(String("KeyD"), String("d"));
++    map.insert(String("KeyF"), String("f"));
++    map.insert(String("KeyG"), String("g"));
++    map.insert(String("KeyH"), String("h"));
++    map.insert(String("KeyJ"), String("j"));
++    map.insert(String("KeyK"), String("k"));
++    map.insert(String("KeyL"), String("l"));
++    map.insert(String("Semicolon"), String(";"));
++    map.insert(String("Quote"), String("'"));
++    map.insert(String("KeyZ"), String("z"));
++    map.insert(String("KeyX"), String("x"));
++    map.insert(String("KeyC"), String("c"));
++    map.insert(String("KeyV"), String("v"));
++    map.insert(String("KeyB"), String("b"));
++    map.insert(String("KeyN"), String("n"));
++    map.insert(String("KeyM"), String("m"));
++    map.insert(String("Comma"), String(","));
++    map.insert(String("Period"), String("."));
++    map.insert(String("Slash"), String("/"));
++    map.insert(String("IntlBackslash"), String("\\"));
++    layout_map_property_->Resolve(MakeGarbageCollected<KeyboardLayoutMap>(map));
++    layout_map_property_ = nullptr;
++    return;
++  }
++
+   switch (result->status) {
+     case mojom::blink::GetKeyboardLayoutMapStatus::kSuccess:
+       layout_map_property_->Resolve(

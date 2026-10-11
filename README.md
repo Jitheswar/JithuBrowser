@@ -2,27 +2,37 @@
 
 **A privacy-focused browser built on official Chromium.** Websites keep working, including Chrome-only ones, and Chrome Web Store extensions install normally. Pages just can't watch what you do.
 
-> Status: **work in progress.** The patch set and build pipeline are under active development; see [ROADMAP](docs/ROADMAP.md).
+> Status: **work in progress, no release yet.** The patches are written but the first full build has not been verified. The download table below describes the planned release packages; nothing is published until a GitHub release exists.
 
 ## What JithuBrowser hides from websites
 
-| Area | What sites normally learn | JithuBrowser |
-|---|---|---|
-| Page Visibility API | When you switch tabs or minimise | Page always looks visible |
-| Focus / blur | When you click into another window | No window blur/focus, `hasFocus()` is true |
-| Fullscreen | When you press F11 / leave fullscreen | User-initiated fullscreen isn't reported |
-| Extensions | Which extensions you have installed | Probing `chrome-extension://` gives the same answer whether or not an extension is installed |
-| User-Agent + Client Hints | Exact version, OS version, CPU arch, device model | Generic Google Chrome UA, reduced hints |
-| History API | How many pages you visited in this tab | `history.length` clamped |
-| DevTools detection | That you opened DevTools (console getters, `debugger` timing, window size, F12 keydown) | All of these are neutralised |
-| Keyboard | Browser/OS shortcuts you press (F12, Ctrl+Tab, Ctrl+T, PrintScreen, Super), keystroke-timing biometrics, keyboard layout | Shortcuts never reach the page, key timing is jittered, layout map is standard |
-| Automation | `navigator.webdriver` | Always `false` |
+| Area | What sites normally learn | JithuBrowser | Status |
+|---|---|---|---|
+| Page Visibility API | When you switch tabs or minimise (`document.hidden`, `visibilitychange`, `freeze`/`resume`, visibility timeline, service-worker `clients.matchAll()`) | Page always looks visible | patched, awaiting first build |
+| Focus / blur | When you click into another window (`blur`, `focus`, `hasFocus()`) | Page always believes its window is focused | patched, awaiting first build |
+| Window geometry & fullscreen | OS window size/position, F11 fullscreen (`outerWidth`, `screenX`, `display-mode`) | Derived from the page viewport; browser fullscreen looks like a normal window | patched, awaiting first build |
+| History | How many pages you visited in the tab (`history.length`) | Clamped to 2 | patched, awaiting first build |
+| Automation | `navigator.webdriver` | Always `false` | patched, awaiting first build |
+| User-Agent + Client Hints | Exact version, OS version, device model | Looks like stock Google Chrome; high-entropy hints reduced | patched, awaiting first build |
+| Keyboard layout | Your physical layout/language via `navigator.keyboard.getLayoutMap()` | Standard US QWERTY | patched, awaiting first build |
+| Typing rhythm | Keystroke timing biometrics | Key event timestamps are jittered (monotonic, never in the future) | patched, awaiting first build |
+| Browser shortcuts | Which shortcuts you press (Ctrl+F, Ctrl+T, F5, ...) | Handled by the browser, never offered to the page (cut/copy/paste still reach the page so web editors work) | patched, awaiting first build |
 
-Each protection is a Chromium feature flag that's on by default. Turn any of them off in `chrome://flags` (search "JithuBrowser") if a site really needs it.
+Not hidden, because the page legitimately needs it: the characters you type into a page's own text fields and the keys you press while a page has focus and no browser shortcut matches.
 
-## Downloads
+Each protection is a Chromium feature that is on by default. Turn one off if a site breaks, for example:
 
-Releases: https://github.com/Jitheswar/JithuBrowser/releases
+```bash
+jithubrowser --disable-features=JithuBrowserHideVisibility,JithuBrowserProtectKeyboard
+```
+
+Feature names: `JithuBrowserHideVisibility`, `JithuBrowserHideFocus`, `JithuBrowserHideWindowGeometry`, `JithuBrowserHideHistoryLength`, `JithuBrowserHideAutomation`, `JithuBrowserReduceClientHints`, `JithuBrowserProtectKeyboard`, `JithuBrowserKeystrokeJitter`.
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for what is still planned and [docs/DESIGN.md](docs/DESIGN.md) for limits (what a page can still work out).
+
+## Downloads (planned)
+
+Prebuilt packages, so nobody has to compile Chromium, will appear at https://github.com/Jitheswar/JithuBrowser/releases
 
 | Platform | Package |
 |---|---|
@@ -43,9 +53,11 @@ See [docs/BUILDING.md](docs/BUILDING.md). Short version on Linux:
 ./scripts/package-linux.sh  # .deb, .rpm, .tar.xz
 ```
 
+Windows: `scripts\windows\build.ps1` then `scripts\windows\package.ps1` (portable zip + Inno Setup installer).
+
 ## Testing
 
-`tests/detection/` is a page that runs every spying technique listed above. `tests/run_detection.py <browser>` runs it automatically: it switches tabs, attaches DevTools and sends keys while the page watches.
+`tests/test_privacy.py` (pytest + Playwright) checks each protection against a browser binary: `JITHU_BROWSER=/path/to/binary pytest tests/`. Run it against stock Chrome first; the UA, Client Hints, history, `webdriver` and keyboard tests should fail there and pass on JithuBrowser. `tests/detection/` is a manual page that runs the same probes. Tab-switch and minimise tests need a real window manager; a display-less cluster cannot hide windows.
 
 ## License
 

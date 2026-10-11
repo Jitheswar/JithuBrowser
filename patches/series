@@ -1,0 +1,9 @@
+0001-jithubrowser-feature-flags.patch
+0002-hide-page-visibility.patch
+0003-hide-window-focus.patch
+0004-hide-window-geometry-and-fullscreen.patch
+0005-hide-history-length-and-webdriver.patch
+0006-chrome-identical-user-agent-and-client-hints.patch
+0007-standard-keyboard-layout-map.patch
+0008-keystroke-timing-jitter.patch
+0009-reserve-browser-shortcuts.patch
