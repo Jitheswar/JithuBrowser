@@ -1,0 +1,29 @@
+# Maintainer: Jitheswar <jitheswaredu at gmail dot com>
+# Installs the official JBrowser release build (built from patched official Chromium).
+pkgname=jbrowser-bin
+pkgver=155.0.8059.39.1
+pkgrel=1
+pkgdesc="Privacy-focused web browser based on official Chromium"
+arch=('x86_64')
+url="https://github.com/Jitheswar/JBrowser"
+license=('BSD-3-Clause')
+depends=('alsa-lib' 'at-spi2-core' 'cairo' 'dbus' 'gtk3' 'libcups' 'libdrm' 'libxkbcommon' 'mesa'
+         'nss' 'pango' 'libx11' 'libxcb' 'libxcomposite' 'libxdamage' 'libxext' 'libxfixes'
+         'libxrandr' 'xdg-utils' 'ttf-liberation')
+provides=('jbrowser')
+conflicts=('jbrowser')
+options=('!strip' '!debug')
+source=("https://github.com/Jitheswar/JBrowser/releases/download/v${pkgver}/jbrowser-${pkgver}-linux-x64.tar.xz")
+sha256sums=('SKIP')
+
+package() {
+  local src="$srcdir/jbrowser-${pkgver}-linux-x64"
+  install -d "$pkgdir/opt/jbrowser" "$pkgdir/usr/bin"
+  cp -a "$src/." "$pkgdir/opt/jbrowser/"
+  rm -f "$pkgdir/opt/jbrowser/"{README.txt,jbrowser.desktop,product_logo_256.png}
+  chmod 4755 "$pkgdir/opt/jbrowser/chrome-sandbox"
+  ln -s /opt/jbrowser/jbrowser-launcher "$pkgdir/usr/bin/jbrowser"
+  install -Dm644 "$src/jbrowser.desktop" "$pkgdir/usr/share/applications/jbrowser.desktop"
+  install -Dm644 "$src/product_logo_256.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/jbrowser.png"
+  install -Dm644 "$src/LICENSE.JBrowser" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

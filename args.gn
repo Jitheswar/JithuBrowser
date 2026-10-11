@@ -1,0 +1,25 @@
+# JBrowser release build arguments (shared by Linux and Windows).
+is_official_build = true
+is_debug = false
+is_component_build = false
+symbol_level = 0
+blink_symbol_level = 0
+v8_symbol_level = 0
+dcheck_always_on = false
+treat_warnings_as_errors = false
+enable_nacl = false
+
+# Site compatibility: same media capabilities as Google Chrome.
+proprietary_codecs = true
+ffmpeg_branding = "Chrome"
+enable_widevine = true
+
+# No Google API keys, no metrics/crash upload to Google.
+use_official_google_api_keys = false
+google_api_key = ""
+google_default_client_id = ""
+google_default_client_secret = ""
+enable_reporting = false
+enable_hangout_services_extension = false
+enable_mse_mpeg2ts_stream_parser = true
+use_remoteexec = false
