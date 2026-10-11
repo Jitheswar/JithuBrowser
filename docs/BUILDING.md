@@ -30,3 +30,14 @@ Cross-compiling for Windows from Linux is not supported by this repo.
 ## Changing a patch
 
 Edit files in `build-work/chromium/src`, then `scripts/export-patch.sh NNNN-name.patch <paths...>`.
+
+## Windows without a Windows machine (cross-compile from Linux)
+
+Chromium supports cross-building for Windows. The only non-public piece is Google's packaged Windows toolchain, so JithuBrowser fetches Microsoft's public MSVC CRT + Windows SDK with [`xwin`](https://github.com/Jake-Shadle/xwin):
+
+```bash
+JB_ACCEPT_MS_LICENSE=1 ./scripts/fetch-winsdk.sh     # accepts Microsoft's Visual Studio / SDK licence terms
+source scripts/env.sh && source scripts/windows-cross-env.sh
+```
+
+Patch `0010` makes Chromium accept SDK 10.0.26100 (it names the newer 28000 SDK). Windows binaries cannot be run on Linux, so a cross-built `.exe` is untested until someone runs it on Windows.

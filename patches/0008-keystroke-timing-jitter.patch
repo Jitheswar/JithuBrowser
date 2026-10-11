@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/core/events/keyboard_event.cc b/third_party/blink/renderer/core/events/keyboard_event.cc
-index 7f91061eb3..c6eaaf1a87 100644
+index 7f91061eb3..dff5160165 100644
 --- a/third_party/blink/renderer/core/events/keyboard_event.cc
 +++ b/third_party/blink/renderer/core/events/keyboard_event.cc
 @@ -22,9 +22,14 @@
@@ -33,7 +33,7 @@ index 7f91061eb3..c6eaaf1a87 100644
 +  thread_local base::TimeTicks last_stamp;
 +  const int max_ms = jithubrowser::features::kJithuBrowserKeystrokeJitterMaxMs.Get();
 +  base::TimeTicks jittered =
-+      ts - base::Microseconds(base::RandInt(0, std::max(0, max_ms) * 1000));
++      ts - base::RandTimeDeltaUpTo(base::Milliseconds(std::max(1, max_ms)));
 +  if (jittered < last_stamp) {
 +    jittered = last_stamp;
 +  }
