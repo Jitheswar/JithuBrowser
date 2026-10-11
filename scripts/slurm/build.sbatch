@@ -1,22 +1,18 @@
 #!/bin/bash
 # Build JithuBrowser on a Slurm compute node (whole node).
+#   sbatch scripts/slurm/build.sbatch                  # release build (LTO, slow)
+#   JB_FLAVOR=dev sbatch --export=ALL scripts/slurm/build.sbatch   # fast verification build
+# Chromium 155's prebuilt Rust tools need glibc >= 2.34 but RHEL 8 has 2.28, so the
+# build runs inside an Ubuntu 22.04 rootfs (build-work/rootfs) via user namespaces.
+# Create it once with scripts/make-rootfs.sh.
 #SBATCH -J jithu-build
 #SBATCH -p cluster1-cpu
 #SBATCH --exclusive
 #SBATCH --mem=0
 #SBATCH -o build-work/logs/build-%j.log
 set -euo pipefail
-# Compute nodes have no system git; some build actions (ANGLE/Dawn commit ids) need it.
-command -v git >/dev/null || export PATH="$HOME/.local/opt/nodegit/bin:$PATH"
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/../..}"
-# Prebuilt Rust bindgen needs GLIBCXX_3.4.26, newer than RHEL 8's system
-# libstdc++. The build overrides LD_LIBRARY_PATH with the clang lib dir, so
-# drop a newer libstdc++ there.
-GCC_LIB="${GCC_LIB:-/opt/ohpc/pub/compiler/gcc/9.3.0/lib64}"
-CLANG_LIB="$PWD/build-work/chromium/src/third_party/llvm-build/Release+Asserts/lib"
-if ! strings /lib64/libstdc++.so.6 | grep -q GLIBCXX_3.4.26 && [ -e "$GCC_LIB/libstdc++.so.6" ]; then
-  ln -sf "$GCC_LIB/libstdc++.so.6" "$CLANG_LIB/libstdc++.so.6"
-fi
 export JB_JOBS="${JB_JOBS:-$(nproc)}"
-./scripts/build.sh
+scripts/enter-rootfs.sh env JB_JOBS="$JB_JOBS" JB_FLAVOR="${JB_FLAVOR:-release}" JB_EXTRA_TARGETS="${JB_EXTRA_TARGETS:-}" \
+  bash -c "cd '$PWD' && ./scripts/build.sh"
 echo BUILD_DONE

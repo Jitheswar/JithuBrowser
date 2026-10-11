@@ -1,0 +1,17 @@
+# Fast developer build used to verify patches (no LTO, component build).
+is_official_build = false
+is_debug = false
+is_component_build = true
+symbol_level = 0
+blink_symbol_level = 0
+v8_symbol_level = 0
+dcheck_always_on = false
+treat_warnings_as_errors = false
+proprietary_codecs = true
+ffmpeg_branding = "Chrome"
+use_official_google_api_keys = false
+google_api_key = ""
+google_default_client_id = ""
+google_default_client_secret = ""
+enable_reporting = false
+use_remoteexec = false
