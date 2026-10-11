@@ -50,6 +50,13 @@ done
 mkdir -p "$R/usr/share/icons/hicolor/scalable/apps"
 cp "$JB_ROOT/branding/icons/jithubrowser.svg" "$R/usr/share/icons/hicolor/scalable/apps/jithubrowser.svg"
 
+# Normalise permissions for every package type: dirs 755, executables 755, data 644,
+# and the setuid sandbox helper 4755.
+find "$R" -type d -exec chmod 755 {} +
+find "$R" -type f -perm /111 -exec chmod 755 {} +
+find "$R" -type f ! -perm /111 -exec chmod 644 {} +
+chmod 4755 "$APP/chrome-sandbox"
+
 # --- portable tarball --------------------------------------------------------
 TARDIR="jithubrowser-$VER-linux-x64"
 mkdir -p "$STAGE/tar/$TARDIR"
@@ -71,7 +78,7 @@ Version: $VER
 Architecture: amd64
 Maintainer: Jitheswar <jitheswaredu@gmail.com>
 Installed-Size: $INSTALLED_KB
-Depends: libasound2 | libasound2t64, libatk-bridge2.0-0 | libatk-bridge2.0-0t64, libatk1.0-0 | libatk1.0-0t64, libatspi2.0-0 | libatspi2.0-0t64, libc6 (>= 2.28), libcairo2, libcups2 | libcups2t64, libdbus-1-3, libdrm2, libexpat1, libgbm1, libglib2.0-0 | libglib2.0-0t64, libgtk-3-0 | libgtk-3-0t64, libnspr4, libnss3 (>= 3.26), libpango-1.0-0, libx11-6, libxcb1, libxcomposite1, libxdamage1, libxext6, libxfixes3, libxkbcommon0, libxrandr2, xdg-utils, ca-certificates, fonts-liberation
+Depends: libasound2 | libasound2t64, libatk-bridge2.0-0 | libatk-bridge2.0-0t64, libatk1.0-0 | libatk1.0-0t64, libatspi2.0-0 | libatspi2.0-0t64, libc6 (>= 2.31), libcairo2, libcups2 | libcups2t64, libdbus-1-3, libdrm2, libexpat1, libgbm1, libglib2.0-0 | libglib2.0-0t64, libgtk-3-0 | libgtk-3-0t64, libnspr4, libnss3 (>= 3.26), libpango-1.0-0, libx11-6, libxcb1, libxcomposite1, libxdamage1, libxext6, libxfixes3, libxkbcommon0, libxrandr2, xdg-utils, ca-certificates, fonts-liberation
 Section: web
 Priority: optional
 Homepage: https://github.com/Jitheswar/JithuBrowser

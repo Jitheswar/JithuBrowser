@@ -9,6 +9,7 @@ AutoReqProv:    no
 Requires:       nss >= 3.26, nspr, alsa-lib, atk, at-spi2-atk, cups-libs, dbus-libs, libdrm, expat, mesa-libgbm, glib2, gtk3, pango, cairo, libX11, libxcb, libXcomposite, libXdamage, libXext, libXfixes, libxkbcommon, libXrandr, xdg-utils, ca-certificates, liberation-fonts
 
 %global debug_package %{nil}
+%global _build_id_links none
 %global __os_install_post %{nil}
 
 %description
@@ -19,14 +20,15 @@ staying compatible with Chrome-only websites and Chrome Web Store extensions.
 %install
 mkdir -p %{buildroot}
 cp -a %{jb_root}/. %{buildroot}/
+chmod 4755 %{buildroot}/opt/jithubrowser/chrome-sandbox
 
 %post
 update-desktop-database -q /usr/share/applications >/dev/null 2>&1 || :
 gtk-update-icon-cache -q -t /usr/share/icons/hicolor >/dev/null 2>&1 || :
 
 %files
+%defattr(-,root,root,-)
 /opt/jithubrowser
-%attr(4755, root, root) /opt/jithubrowser/chrome-sandbox
 /usr/bin/jithubrowser
 /usr/share/applications/jithubrowser.desktop
 /usr/share/icons/hicolor/*/apps/jithubrowser.*
