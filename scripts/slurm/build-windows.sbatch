@@ -10,5 +10,5 @@
 #SBATCH -o build-work/logs/build-win-%j.log
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/../..}"
-scripts/enter-rootfs.sh env JB_JOBS="${JB_JOBS:-$(nproc)}" bash -c "cd '$PWD' && ./scripts/build-windows.sh"
+scripts/enter-rootfs.sh env JB_JOBS="${JB_JOBS:-$(nproc)}" JB_KEEP_GOING="${JB_KEEP_GOING:-0}" bash -c "cd '$PWD' && ./scripts/build-windows.sh"
 echo BUILD_DONE

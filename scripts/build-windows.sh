@@ -5,6 +5,8 @@
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
 source "$JB_ROOT/scripts/windows-cross-env.sh"
+# Windows looks headers up case-insensitively; add symlinks for every spelling Chromium uses.
+python3 "$JB_ROOT/scripts/fix-winsdk-case.py" "${JB_WINSYSROOT:-$JB_WORK/winsysroot}" "$JB_SRC"
 cd "$JB_SRC"
 OUT=out/JithuBrowser-win
 mkdir -p "$OUT"
@@ -16,5 +18,5 @@ use_clang_modules = false
 ARGS
 # Linux-only options in the shared args.gn do not apply on Windows; widevine/codecs do.
 gn gen "$OUT"
-autoninja -C "$OUT" -j "${JB_JOBS:-$(nproc)}" chrome chromedriver mini_installer
+autoninja -C "$OUT" -k "${JB_KEEP_GOING:-1}" -j "${JB_JOBS:-$(nproc)}" chrome chromedriver mini_installer
 ls -la "$OUT"/chrome.exe "$OUT"/mini_installer.exe
