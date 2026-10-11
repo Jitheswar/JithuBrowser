@@ -1,0 +1,211 @@
+diff --git a/third_party/blink/renderer/core/frame/screen.cc b/third_party/blink/renderer/core/frame/screen.cc
+index ed5028943e..d11138e6a0 100644
+--- a/third_party/blink/renderer/core/frame/screen.cc
++++ b/third_party/blink/renderer/core/frame/screen.cc
+@@ -28,6 +28,8 @@
+ 
+ #include "third_party/blink/renderer/core/frame/screen.h"
+ 
++#include "base/feature_list.h"
++
+ #include "base/numerics/safe_conversions.h"
+ #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
+ #include "third_party/blink/renderer/core/dom/document.h"
+@@ -38,6 +40,7 @@
+ #include "third_party/blink/renderer/core/page/chrome_client.h"
+ #include "ui/display/screen_info.h"
+ #include "ui/display/screen_infos.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ 
+ namespace blink {
+ 
+@@ -69,8 +72,10 @@ bool Screen::AreWebExposedScreenPropertiesEqual(
+     return false;
+   }
+ 
+-  // avail[Left|Top|Width|Height]() use available_rect
+-  if (prev.available_rect != current.available_rect) {
++  // avail[Left|Top|Width|Height]() use available_rect. JithuBrowser reports the
++  // full screen rect there, so taskbar/dock changes are not observable.
++  if (!base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideWindowGeometry) &&
++      prev.available_rect != current.available_rect) {
+     return false;
+   }
+ 
+@@ -79,8 +84,9 @@ bool Screen::AreWebExposedScreenPropertiesEqual(
+     return false;
+   }
+ 
+-  // isExtended()
+-  if (prev.is_extended != current.is_extended) {
++  // isExtended() (always false under JithuBrowser)
++  if (!base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideWindowGeometry) &&
++      prev.is_extended != current.is_extended) {
+     return false;
+   }
+ 
+@@ -166,6 +172,11 @@ bool Screen::isExtended() const {
+     return false;
+   }
+ 
++  // JithuBrowser: do not reveal multi-monitor setups without a permission
++  // prompt; getScreenDetails() remains available for sites that need it.
++  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
++    return false;
++  }
+   return GetScreenInfo().is_extended;
+ }
+ 
+@@ -175,6 +186,10 @@ gfx::Rect Screen::GetRect(bool available) const {
+   LocalFrame* frame = DomWindow()->GetFrame();
+   const display::ScreenInfo& screen_info = GetScreenInfo();
+   gfx::Rect rect = available ? screen_info.available_rect : screen_info.rect;
++  if (available && base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
++    // JithuBrowser: avail* equals the full screen; no taskbar/dock information.
++    rect = screen_info.rect;
++  }
+   if (frame->GetSettings()->GetReportScreenSizeInPhysicalPixelsQuirk())
+     return gfx::ScaleToRoundedRect(rect, screen_info.device_scale_factor);
+   if (frame->GetDocument() && frame->GetDocument()->TextScaleMetaTagPresent()) {
+diff --git a/third_party/blink/renderer/core/events/mouse_event.cc b/third_party/blink/renderer/core/events/mouse_event.cc
+index 19f0f66095..041a761c61 100644
+--- a/third_party/blink/renderer/core/events/mouse_event.cc
++++ b/third_party/blink/renderer/core/events/mouse_event.cc
+@@ -22,7 +22,10 @@
+ 
+ #include "third_party/blink/renderer/core/events/mouse_event.h"
+ 
++#include "base/feature_list.h"
++
+ #include "third_party/blink/public/common/input/web_pointer_properties.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_mouse_event_init.h"
+ #include "third_party/blink/renderer/core/dom/element.h"
+ #include "third_party/blink/renderer/core/dom/events/event_dispatcher.h"
+@@ -30,6 +33,7 @@
+ #include "third_party/blink/renderer/core/event_interface_names.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
++#include "third_party/blink/renderer/core/page/chrome_client.h"
+ #include "third_party/blink/renderer/core/frame/local_frame_view.h"
+ #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
+ #include "third_party/blink/renderer/core/html/html_frame_element_base.h"
+@@ -201,6 +205,7 @@ void MouseEvent::SetCoordinatesFromWebPointerProperties(
+     MouseEventInit* initializer) {
+   gfx::PointF client_point;
+   gfx::PointF screen_point = web_pointer_properties.PositionInScreen();
++  bool pointer_locked = false;
+   float inverse_zoom_factor = 1.0f;
+   if (dom_window && dom_window->GetFrame() && dom_window->GetFrame()->View()) {
+     LocalFrame* frame = dom_window->GetFrame();
+@@ -210,6 +215,7 @@ void MouseEvent::SetCoordinatesFromWebPointerProperties(
+           !p->GetPointerLockController().LockPending()) {
+         p->GetPointerLockController().GetPointerLockPosition(&root_frame_point,
+                                                              &screen_point);
++        pointer_locked = true;
+       }
+     }
+     gfx::PointF frame_point =
+@@ -218,6 +224,24 @@ void MouseEvent::SetCoordinatesFromWebPointerProperties(
+     client_point = gfx::ScalePoint(frame_point, inverse_zoom_factor);
+   }
+ 
++  // JithuBrowser: screenX/Y must not reveal the real window position or F11
++  // state, so derive them from the in-widget position and the spoofed window
++  // geometry (window origin at 0,0 with the browser UI above the viewport).
++  if (!pointer_locked && dom_window && dom_window->GetFrame() &&
++      base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
++    LocalFrame* jithu_frame = dom_window->GetFrame();
++    const float dsf = jithu_frame->GetChromeClient()
++                          .GetScreenInfo(*jithu_frame)
++                          .device_scale_factor;
++    if (dsf > 0) {
++      gfx::PointF widget_point = web_pointer_properties.PositionInWidget();
++      screen_point = gfx::PointF(
++          widget_point.x() / dsf,
++          widget_point.y() / dsf +
++              jithubrowser::features::kJithuBrowserChromeHeight);
++    }
++  }
++
+   initializer->setScreenX(screen_point.x());
+   initializer->setScreenY(screen_point.y());
+   initializer->setClientX(client_point.x());
+diff --git a/third_party/blink/renderer/modules/wake_lock/wake_lock.cc b/third_party/blink/renderer/modules/wake_lock/wake_lock.cc
+index 1ee9839aa8..3e59f3533a 100644
+--- a/third_party/blink/renderer/modules/wake_lock/wake_lock.cc
++++ b/third_party/blink/renderer/modules/wake_lock/wake_lock.cc
+@@ -6,6 +6,7 @@
+ 
+ #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
+ #include "third_party/blink/public/mojom/permissions/permission_status.mojom-blink.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_throw_dom_exception.h"
+ #include "third_party/blink/renderer/core/dom/document.h"
+@@ -25,6 +26,16 @@
+ 
+ namespace blink {
+ 
++namespace {
++
++// JithuBrowser: the real page visibility is not exposed to script, so Wake
++// Lock must not reject requests or fire 'release' when the tab is hidden.
++bool IsPageVisibleToScript(const Page* page) {
++  return page && (page->IsPageVisible() || base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility));
++}
++
++}  // namespace
++
+ using mojom::blink::PermissionService;
+ 
+ // static
+@@ -124,7 +135,7 @@ ScriptPromise<WakeLockSentinel> WakeLock::request(
+     // 6. If the steps to determine the visibility state return hidden, return a
+     //    promise rejected with "NotAllowedError" DOMException.
+     if (type == V8WakeLockType::Enum::kScreen &&
+-        !window->GetFrame()->GetPage()->IsPageVisible()) {
++        !IsPageVisibleToScript(window->GetFrame()->GetPage())) {
+       exception_state.ThrowDOMException(DOMExceptionCode::kNotAllowedError,
+                                         "The requesting page is not visible");
+       return EmptyPromise();
+@@ -205,7 +216,7 @@ void WakeLock::DidReceivePermissionResponse(
+   // 8.3. Queue a global task on the screen wake lock task source given
+   //      document's relevant global object to run these steps:
+   if (type == V8WakeLockType::Enum::kScreen &&
+-      !(GetPage() && GetPage()->IsPageVisible())) {
++      !IsPageVisibleToScript(GetPage())) {
+     // 8.3.1. If the steps to determine the visibility state return hidden,
+     //        then:
+     // 8.3.1.1. Reject promise with a "NotAllowedError" DOMException.
+@@ -239,7 +250,7 @@ void WakeLock::ContextDestroyed() {
+ 
+ void WakeLock::PageVisibilityChanged() {
+   // https://w3c.github.io/screen-wake-lock/#handling-document-loss-of-visibility
+-  if (GetPage() && GetPage()->IsPageVisible())
++  if (IsPageVisibleToScript(GetPage()))
+     return;
+   // 1. For each lock in document.[[ActiveLocks]]["screen"]:
+   // 1.1. Run release a wake lock with document, lock, and "screen".
+diff --git a/third_party/blink/renderer/modules/vibration/vibration_controller.cc b/third_party/blink/renderer/modules/vibration/vibration_controller.cc
+index 3ba3da135c..58ab2d77ca 100644
+--- a/third_party/blink/renderer/modules/vibration/vibration_controller.cc
++++ b/third_party/blink/renderer/modules/vibration/vibration_controller.cc
+@@ -22,6 +22,7 @@
+ #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
+ #include "third_party/blink/public/platform/platform.h"
+ #include "third_party/blink/public/platform/task_type.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_union_unsignedlong_unsignedlongsequence.h"
+ #include "third_party/blink/renderer/core/frame/intervention.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+@@ -142,7 +143,8 @@ bool VibrationController::Vibrate(const VibrationPattern& pattern) {
+   UseCounter::Count(DomWindow(), WebFeature::kNavigatorVibrate);
+ 
+   LocalFrame* frame = DomWindow()->GetFrame();
+-  if (!frame->GetPage()->IsPageVisible())
++  // JithuBrowser: the return value must not reveal whether the tab is hidden.
++  if (!frame->GetPage()->IsPageVisible() && !base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility))
+     return false;
+ 
+   if (!frame->HasStickyUserActivation()) {

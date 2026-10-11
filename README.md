@@ -15,7 +15,7 @@
 | Automation | `navigator.webdriver` | Always `false` | verified (dev build, tests pass) |
 | User-Agent + Client Hints | Exact version, OS version, device model | Looks like stock Google Chrome; high-entropy hints reduced | verified (dev build, tests pass) |
 | Keyboard layout | Your physical layout/language via `navigator.keyboard.getLayoutMap()` | Standard US QWERTY | verified (dev build, tests pass) |
-| Typing rhythm | Keystroke timing biometrics | Key event timestamps are jittered (monotonic, never in the future) | verified (dev build, tests pass) |
+| Typing rhythm | Keystroke timing biometrics | Key event timestamps are jittered (monotonic, never in the future); `performance.now()` inside a handler is not jittered | verified (dev build, tests pass) |
 | Browser shortcuts | Which shortcuts you press (Ctrl+F, Ctrl+T, F5, ...) | Handled by the browser, never offered to the page (cut/copy/paste still reach the page so web editors work) | verified (dev build, tests pass) |
 
 Not hidden, because the page legitimately needs it: the characters you type into a page's own text fields and the keys you press while a page has focus and no browser shortcut matches.

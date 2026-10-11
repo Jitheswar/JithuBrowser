@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink/renderer/core/dom/document.cc
-index c72f2ef4c4..1e36829f56 100644
+index c72f2ef4c4..15f1caa3f4 100644
 --- a/third_party/blink/renderer/core/dom/document.cc
 +++ b/third_party/blink/renderer/core/dom/document.cc
 @@ -82,6 +82,7 @@
@@ -10,19 +10,30 @@ index c72f2ef4c4..1e36829f56 100644
  #include "third_party/blink/renderer/bindings/core/v8/capture_source_location.h"
  #include "third_party/blink/renderer/bindings/core/v8/frozen_array.h"
  #include "third_party/blink/renderer/bindings/core/v8/isolated_world_csp.h"
-@@ -2323,10 +2324,19 @@ bool Document::prerendering() const {
+@@ -2307,7 +2308,7 @@ bool Document::IsPrefetchOnly() const {
  }
  
- bool Document::hidden() const {
-+  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility)) {
-+    // JithuBrowser: script never learns about tab switches or minimising.
-+    // Only report "hidden" while the document is really going away.
-+    return !GetFrame() || !GetFrame()->GetPage() ||
-+           load_event_progress_ >= kUnloadVisibilityChangeInProgress;
-+  }
+ V8VisibilityState Document::visibilityState() const {
+-  if (hidden()) {
++  if (HiddenForScript()) {
+     return V8VisibilityState(V8VisibilityState::Enum::kHidden);
+   } else {
+     return V8VisibilityState(V8VisibilityState::Enum::kVisible);
+@@ -2326,7 +2327,21 @@ bool Document::hidden() const {
    return !IsPageVisible();
  }
  
++bool Document::HiddenForScript() const {
++  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility)) {
++    // JithuBrowser: script never learns about tab switches or minimising.
++    // Only report "hidden" while the document is really going away. Blink's
++    // own code keeps using hidden()/IsPageVisible(), which stay truthful.
++    return !GetFrame() || !GetFrame()->GetPage() ||
++           load_event_progress_ >= kUnloadVisibilityChangeInProgress;
++  }
++  return hidden();
++}
++
  bool Document::wasDiscarded() const {
 +  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility)) {
 +    return false;
@@ -30,7 +41,7 @@ index c72f2ef4c4..1e36829f56 100644
    return was_discarded_;
  }
  
-@@ -2342,10 +2352,12 @@ void Document::DidChangeVisibilityState() {
+@@ -2342,10 +2357,12 @@ void Document::DidChangeVisibilityState() {
      // tab and update the visibility state.
      return;
    }
@@ -47,7 +58,7 @@ index c72f2ef4c4..1e36829f56 100644
  
    if (IsPageVisible())
      GetDocumentAnimations().MarkAnimationsCompositorPending();
-@@ -4731,7 +4743,9 @@ void Document::DispatchUnloadEvents(
+@@ -4731,7 +4748,9 @@ void Document::DispatchUnloadEvents(
    // kUnloadVisibilityChangeInProgress because that would change the result.
    bool page_visible = IsPageVisible();
    load_event_progress_ = kUnloadVisibilityChangeInProgress;
@@ -58,7 +69,7 @@ index c72f2ef4c4..1e36829f56 100644
      // Dispatch visibilitychange event, but don't bother doing
      // other notifications as we're about to be unloaded.
      DispatchEvent(*Event::CreateBubble(event_type_names::kVisibilitychange));
-@@ -4762,7 +4776,9 @@ void Document::DispatchUnloadEvents(
+@@ -4762,7 +4781,9 @@ void Document::DispatchUnloadEvents(
  
  void Document::DispatchFreezeEvent() {
    SetFreezingInProgress(true);
@@ -69,6 +80,41 @@ index c72f2ef4c4..1e36829f56 100644
    SetFreezingInProgress(false);
    UseCounter::Count(*this, WebFeature::kPageLifeCycleFreeze);
  }
+diff --git a/third_party/blink/renderer/core/dom/document.h b/third_party/blink/renderer/core/dom/document.h
+index 8e2fc1ddb0..51ea855017 100644
+--- a/third_party/blink/renderer/core/dom/document.h
++++ b/third_party/blink/renderer/core/dom/document.h
+@@ -604,6 +604,8 @@ class CORE_EXPORT Document : public ContainerNode,
+   String visibilityStateAsString() const;
+   bool IsPageVisible() const;
+   bool hidden() const;
++  // Value exposed to script (document.hidden/visibilityState); see JithuBrowser.
++  bool HiddenForScript() const;
+   void DidChangeVisibilityState();
+ 
+   bool prerendering() const;
+diff --git a/third_party/blink/renderer/core/dom/document.idl b/third_party/blink/renderer/core/dom/document.idl
+index e2edfd0db8..4800bfc5e8 100644
+--- a/third_party/blink/renderer/core/dom/document.idl
++++ b/third_party/blink/renderer/core/dom/document.idl
+@@ -181,7 +181,7 @@ typedef (HTMLScriptElement or SVGScriptElement) HTMLOrSVGScriptElement;
+ 
+     // Page Visibility
+     // https://w3c.github.io/page-visibility/#extensions-to-the-document-interface
+-    readonly attribute boolean hidden;
++    [ImplementedAs=HiddenForScript] readonly attribute boolean hidden;
+     readonly attribute VisibilityState visibilityState;
+     readonly attribute boolean wasDiscarded;
+ 
+@@ -206,7 +206,7 @@ typedef (HTMLScriptElement or SVGScriptElement) HTMLOrSVGScriptElement;
+     // TODO(davidben): This is a property so attaching a deprecation warning results in false positives when outputting
+     // document in the console. It's possible https://crbug.com/43394 will resolve this.
+     [MeasureAs=PrefixedPageVisibility, ImplementedAs=visibilityStateAsString] readonly attribute DOMString webkitVisibilityState;
+-    [MeasureAs=PrefixedPageVisibility, ImplementedAs=hidden] readonly attribute boolean webkitHidden;
++    [MeasureAs=PrefixedPageVisibility, ImplementedAs=HiddenForScript] readonly attribute boolean webkitHidden;
+ 
+     // Private Token API (https://github.com/wicg/trust-token-api)
+     [CallWith=ScriptState, Measure, RaisesException, NewObject, SecureContext, RuntimeEnabled=PrivateStateTokens] Promise<boolean> hasPrivateToken(USVString issuer);
 diff --git a/third_party/blink/renderer/core/frame/local_frame.cc b/third_party/blink/renderer/core/frame/local_frame.cc
 index 3960cc4f1f..2bd691bb36 100644
 --- a/third_party/blink/renderer/core/frame/local_frame.cc

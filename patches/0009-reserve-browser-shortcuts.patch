@@ -1,5 +1,5 @@
 diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
-index 3741ba7671..652d76f4e2 100644
+index 3741ba7671..1f3b2466a9 100644
 --- a/chrome/browser/ui/browser_command_controller.cc
 +++ b/chrome/browser/ui/browser_command_controller.cc
 @@ -189,6 +189,7 @@
@@ -10,25 +10,48 @@ index 3741ba7671..652d76f4e2 100644
  #endif  // BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
  
  static_assert(BUILDFLAG(ENABLE_EXTENSIONS));
-@@ -483,6 +484,21 @@ bool BrowserCommandController::IsReservedCommandOrKey(
-     return false;
+@@ -532,14 +533,36 @@ bool BrowserCommandController::IsReservedCommandOrKey(
    }
+ #endif
  
-+  // JithuBrowser: browser shortcuts (find, new tab, reload, zoom, history,
+-  return command_id == IDC_CLOSE_TAB || command_id == IDC_CLOSE_WINDOW ||
+-         command_id == IDC_NEW_INCOGNITO_WINDOW ||
+-         command_id == IDC_NEW_ISOLATED_WINDOW || command_id == IDC_NEW_TAB ||
+-         command_id == IDC_NEW_WINDOW || command_id == IDC_RESTORE_TAB ||
+-         command_id == IDC_SELECT_NEXT_TAB ||
+-         command_id == IDC_SELECT_PREVIOUS_TAB ||
+-         command_id == IDC_CYCLE_TO_NEXT_TAB ||
+-         command_id == IDC_CYCLE_TO_PREV_TAB || command_id == IDC_EXIT;
++  const bool upstream_reserved =
++      command_id == IDC_CLOSE_TAB || command_id == IDC_CLOSE_WINDOW ||
++      command_id == IDC_NEW_INCOGNITO_WINDOW ||
++      command_id == IDC_NEW_ISOLATED_WINDOW || command_id == IDC_NEW_TAB ||
++      command_id == IDC_NEW_WINDOW || command_id == IDC_RESTORE_TAB ||
++      command_id == IDC_SELECT_NEXT_TAB ||
++      command_id == IDC_SELECT_PREVIOUS_TAB ||
++      command_id == IDC_CYCLE_TO_NEXT_TAB ||
++      command_id == IDC_CYCLE_TO_PREV_TAB || command_id == IDC_EXIT;
++
++  // JithuBrowser: the remaining browser shortcuts (find, reload, zoom, history,
 +  // bookmarks, ...) are handled by the browser and never offered to the page,
-+  // so a site cannot learn which shortcuts the user presses. Text-editing
-+  // commands are excluded: web editors need to see them to work.
-+  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserProtectKeyboard)) {
++  // so a site cannot learn which shortcuts the user presses. This runs after
++  // every upstream exemption above (fullscreen pages, Linux text-editing
++  // hotkeys), so those keep working. Text-editing commands and Escape stay
++  // with the page: web editors and pages that handle Escape need to see them.
++  if (!upstream_reserved &&
++      base::FeatureList::IsEnabled(
++          jithubrowser::features::kJithuBrowserProtectKeyboard)) {
 +    switch (command_id) {
 +      case IDC_CUT:
 +      case IDC_COPY:
 +      case IDC_PASTE:
++      case IDC_CLOSE_FIND_OR_STOP:
 +        return false;
 +      default:
 +        return true;
 +    }
 +  }
-+
- #if BUILDFLAG(IS_CHROMEOS)
-   // On Chrome OS, the top row of keys are mapped to browser actions like
-   // back/forward or refresh. We don't want web pages to be able to change the
++  return upstream_reserved;
+ }
+ 
+ void BrowserCommandController::TabStateChanged() {

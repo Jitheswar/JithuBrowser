@@ -5,8 +5,8 @@ Done (code written, first build pending): visibility, focus, window geometry/ful
 Next
 1. First verified build and test run (stock Chrome vs JithuBrowser).
 2. Releases: attach prebuilt Linux and Windows packages so users never compile.
-3. Hide which extensions are installed from `chrome-extension://` probing (feature flag `JithuBrowserHideExtensions` is reserved).
-4. Background-tab realism (`JithuBrowserBackgroundRealism` reserved): do not throttle timers/rAF for hidden tabs.
+3. Hide which extensions are installed from `chrome-extension://` probing (not started).
+4. Background-tab realism: stop timer/rAF throttling from revealing a hidden tab (not started; see docs/DESIGN.md).
 5. Fingerprinting: canvas/WebGL/audio/font surface, screen size buckets.
 6. Per-site feature overrides in settings UI.
 7. Auto-update channel.

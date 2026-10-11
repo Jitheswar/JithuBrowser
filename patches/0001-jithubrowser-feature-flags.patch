@@ -12,10 +12,10 @@ index 8e635b0da3..c37d7fd29b 100644
      "fenced_frame/redacted_fenced_frame_config_mojom_traits.cc",
 diff --git a/third_party/blink/common/jithubrowser_features.cc b/third_party/blink/common/jithubrowser_features.cc
 new file mode 100644
-index 0000000000..643d691600
+index 0000000000..37b9a6ca1c
 --- /dev/null
 +++ b/third_party/blink/common/jithubrowser_features.cc
-@@ -0,0 +1,22 @@
+@@ -0,0 +1,20 @@
 +// Copyright 2026 The JithuBrowser Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -34,8 +34,6 @@ index 0000000000..643d691600
 +BASE_FEATURE(kJithuBrowserKeystrokeJitter, base::FEATURE_ENABLED_BY_DEFAULT);
 +const base::FeatureParam<int> kJithuBrowserKeystrokeJitterMaxMs{
 +    &kJithuBrowserKeystrokeJitter, "max_ms", 30};
-+BASE_FEATURE(kJithuBrowserHideExtensions, base::FEATURE_ENABLED_BY_DEFAULT);
-+BASE_FEATURE(kJithuBrowserBackgroundRealism, base::FEATURE_ENABLED_BY_DEFAULT);
 +
 +}  // namespace jithubrowser::features
 diff --git a/third_party/blink/public/common/BUILD.gn b/third_party/blink/public/common/BUILD.gn
@@ -52,10 +50,10 @@ index 5a5d9a64a4..60e082e35d 100644
      "fenced_frame/redacted_fenced_frame_config_mojom_traits.h",
 diff --git a/third_party/blink/public/common/jithubrowser_features.h b/third_party/blink/public/common/jithubrowser_features.h
 new file mode 100644
-index 0000000000..dc42470a2b
+index 0000000000..d03ebcdb0b
 --- /dev/null
 +++ b/third_party/blink/public/common/jithubrowser_features.h
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,58 @@
 +// Copyright 2026 The JithuBrowser Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -66,8 +64,10 @@ index 0000000000..dc42470a2b
 +#include "base/feature_list.h"
 +#include "third_party/blink/public/common/common_export.h"
 +
-+// JithuBrowser privacy protections. Every protection is enabled by default and can
-+// be turned off individually from chrome://flags or --disable-features=.
++// JithuBrowser privacy protections. Every protection is enabled by default and
++// can be turned off individually with --disable-features=<FeatureName>, for
++// example --disable-features=JithuBrowserHideVisibility,JithuBrowserHideFocus.
++// (No chrome://flags entries are registered.)
 +namespace jithubrowser::features {
 +
 +// Page Visibility API always reports "visible"; no visibilitychange,
@@ -105,13 +105,9 @@ index 0000000000..dc42470a2b
 +BLINK_COMMON_EXPORT extern const base::FeatureParam<int>
 +    kJithuBrowserKeystrokeJitterMaxMs;
 +
-+// Web pages cannot probe chrome-extension:// URLs to learn which extensions
-+// are installed (web accessible resources only load via per-session URLs).
-+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserHideExtensions);
-+
-+// Background tabs behave like foreground tabs as far as script can tell:
-+// timers and requestAnimationFrame are not throttled, media is not paused.
-+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserBackgroundRealism);
++// Height of the browser UI (tab strip + toolbar) that the spoofed window
++// geometry reports above the viewport.
++inline constexpr int kJithuBrowserChromeHeight = 85;
 +
 +}  // namespace jithubrowser::features
 +
