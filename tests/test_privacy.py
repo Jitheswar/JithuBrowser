@@ -290,6 +290,23 @@ def test_browser_fullscreen_and_window_geometry_hidden(raw):
     assert s["outer"][0].endswith(",0,0"), s["outer"]     # screenX/Y not exposed
 
 
+@needs_display
+def test_vibrate_does_not_reveal_hidden_tab(raw):
+    raw.open("about:blank", spy=False)               # spy tab is now really hidden on stock Chrome
+    time.sleep(2)
+    r = raw.spy_tab.call("Runtime.evaluate", expression="navigator.vibrate(1)", userGesture=True, returnByValue=True)
+    assert r["result"]["value"] is True, r
+
+
+@needs_display
+def test_wake_lock_does_not_reveal_hidden_tab(raw):
+    raw.open("about:blank", spy=False)
+    time.sleep(2)
+    r = raw.spy_tab.call("Runtime.evaluate", userGesture=True, awaitPromise=True, returnByValue=True, expression="""
+      navigator.wakeLock.request('screen').then(l => l.release()).then(() => 'ok', e => e.name + ': ' + e.message)""")
+    assert r["result"]["value"] == "ok", r
+
+
 # --------------------------------------------------------------------------------
 # Playwright tests (independent of window state)
 # --------------------------------------------------------------------------------
@@ -375,3 +392,25 @@ def test_typing_rhythm_is_jittered(page):
     assert all(g >= 0 for g in gaps), "timestamps must stay monotonic"
     # Robotic 60 ms typing: stock browsers reproduce it within ~1-2 ms.
     assert statistics.pstdev(gaps) > 5, (statistics.pstdev(gaps), gaps[:10])
+
+
+def test_screen_avail_does_not_reveal_taskbar(page):
+    # Regression guard: Xvfb has no taskbar, so this also passes on stock Chrome here.
+    r = page.evaluate("({aw: screen.availWidth, ah: screen.availHeight, al: screen.availLeft, at: screen.availTop, w: screen.width, h: screen.height})")
+    assert (r["aw"], r["ah"]) == (r["w"], r["h"]) and (r["al"], r["at"]) == (0, 0), r
+
+
+def test_screen_is_extended_hidden(page):
+    # Regression guard: Xvfb has a single screen, so this also passes on stock Chrome here.
+    assert page.evaluate("screen.isExtended") is False
+
+
+def test_mouse_screen_coordinates_do_not_reveal_window_position(page):
+    # The window was opened at --window-position by the harness; screenX/Y of a click must be
+    # derived from the viewport, not from the real window origin.
+    page.evaluate("window.__m = null; addEventListener('click', e => { window.__m = [e.screenX, e.screenY, e.clientX, e.clientY]; }, true)")
+    page.mouse.click(120, 140)
+    sx, sy, cx, cy = page.evaluate("__m")
+    assert sx == cx and sy - cy == 85, (sx, sy, cx, cy)
+
+
