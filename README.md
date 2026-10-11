@@ -2,21 +2,21 @@
 
 **A privacy-focused browser built on official Chromium.** Websites keep working, including Chrome-only ones, and Chrome Web Store extensions install normally. Pages just can't watch what you do.
 
-> Status: **work in progress, no release yet.** The patches are written but the first full build has not been verified. The download table below describes the planned release packages; nothing is published until a GitHub release exists.
+> Status: **work in progress, no release yet.** All protections are implemented and pass the 14-test privacy suite on a Linux dev build of Chromium 155 (stock Chrome 155 fails 12 of the 14). Release packages are not built yet. The download table below describes the planned release packages; nothing is published until a GitHub release exists.
 
 ## What JithuBrowser hides from websites
 
 | Area | What sites normally learn | JithuBrowser | Status |
 |---|---|---|---|
-| Page Visibility API | When you switch tabs or minimise (`document.hidden`, `visibilitychange`, `freeze`/`resume`, visibility timeline, service-worker `clients.matchAll()`) | Page always looks visible | patched, awaiting first build |
-| Focus / blur | When you click into another window (`blur`, `focus`, `hasFocus()`) | Page always believes its window is focused | patched, awaiting first build |
-| Window geometry & fullscreen | OS window size/position, F11 fullscreen (`outerWidth`, `screenX`, `display-mode`) | Derived from the page viewport; browser fullscreen looks like a normal window | patched, awaiting first build |
-| History | How many pages you visited in the tab (`history.length`) | Clamped to 2 | patched, awaiting first build |
-| Automation | `navigator.webdriver` | Always `false` | patched, awaiting first build |
-| User-Agent + Client Hints | Exact version, OS version, device model | Looks like stock Google Chrome; high-entropy hints reduced | patched, awaiting first build |
-| Keyboard layout | Your physical layout/language via `navigator.keyboard.getLayoutMap()` | Standard US QWERTY | patched, awaiting first build |
-| Typing rhythm | Keystroke timing biometrics | Key event timestamps are jittered (monotonic, never in the future) | patched, awaiting first build |
-| Browser shortcuts | Which shortcuts you press (Ctrl+F, Ctrl+T, F5, ...) | Handled by the browser, never offered to the page (cut/copy/paste still reach the page so web editors work) | patched, awaiting first build |
+| Page Visibility API | When you switch tabs or minimise (`document.hidden`, `visibilitychange`, `freeze`/`resume`, visibility timeline, service-worker `clients.matchAll()`) | Page always looks visible | verified (dev build, tests pass) |
+| Focus / blur | When you click into another window (`blur`, `focus`, `hasFocus()`) | Page always believes its window is focused | verified (dev build, tests pass) |
+| Window geometry & fullscreen | OS window size/position, F11 fullscreen (`outerWidth`, `screenX`, `display-mode`) | Derived from the page viewport; browser fullscreen looks like a normal window | verified (dev build, tests pass) |
+| History | How many pages you visited in the tab (`history.length`) | Clamped to 2 | verified (dev build, tests pass) |
+| Automation | `navigator.webdriver` | Always `false` | verified (dev build, tests pass) |
+| User-Agent + Client Hints | Exact version, OS version, device model | Looks like stock Google Chrome; high-entropy hints reduced | verified (dev build, tests pass) |
+| Keyboard layout | Your physical layout/language via `navigator.keyboard.getLayoutMap()` | Standard US QWERTY | verified (dev build, tests pass) |
+| Typing rhythm | Keystroke timing biometrics | Key event timestamps are jittered (monotonic, never in the future) | verified (dev build, tests pass) |
+| Browser shortcuts | Which shortcuts you press (Ctrl+F, Ctrl+T, F5, ...) | Handled by the browser, never offered to the page (cut/copy/paste still reach the page so web editors work) | verified (dev build, tests pass) |
 
 Not hidden, because the page legitimately needs it: the characters you type into a page's own text fields and the keys you press while a page has focus and no browser shortcut matches.
 
