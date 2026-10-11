@@ -11,5 +11,6 @@ scripts/enter-rootfs.sh bash -c '
   export DEBIAN_FRONTEND=noninteractive
   echo "APT::Sandbox::User \"root\";" > /etc/apt/apt.conf.d/99nosandbox
   apt-get update -qq
-  apt-get install -y -qq --no-install-recommends git gperf bison flex pkg-config python3 ca-certificates curl xz-utils file perl lsb-release'
+  apt-get install -y -qq --no-install-recommends git gperf bison flex pkg-config python3 ca-certificates curl xz-utils file perl lsb-release libnss3 libnspr4 libglib2.0-0 libx11-6 libxcb1 libfontconfig1 libfreetype6 libxkbcommon0 libgbm1 libasound2 libatk1.0-0 libatk-bridge2.0-0 libcups2 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libpango-1.0-0 libcairo2 libxext6 libatspi2.0-0 libdrm2 libgtk-3-0 fonts-liberation xvfb openbox xdotool x11-utils||true
+  printf "#!/bin/sh\nexit 0\n" > /var/lib/dpkg/info/dbus.postinst; dpkg --configure -a || true'
 echo "rootfs ready"
