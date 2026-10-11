@@ -68,7 +68,7 @@ index ed5028943e..d11138e6a0 100644
      return gfx::ScaleToRoundedRect(rect, screen_info.device_scale_factor);
    if (frame->GetDocument() && frame->GetDocument()->TextScaleMetaTagPresent()) {
 diff --git a/third_party/blink/renderer/core/events/mouse_event.cc b/third_party/blink/renderer/core/events/mouse_event.cc
-index 19f0f66095..041a761c61 100644
+index 19f0f66095..33dd85eda4 100644
 --- a/third_party/blink/renderer/core/events/mouse_event.cc
 +++ b/third_party/blink/renderer/core/events/mouse_event.cc
 @@ -22,7 +22,10 @@
@@ -82,15 +82,16 @@ index 19f0f66095..041a761c61 100644
  #include "third_party/blink/renderer/bindings/core/v8/v8_mouse_event_init.h"
  #include "third_party/blink/renderer/core/dom/element.h"
  #include "third_party/blink/renderer/core/dom/events/event_dispatcher.h"
-@@ -30,6 +33,7 @@
+@@ -30,6 +33,8 @@
  #include "third_party/blink/renderer/core/event_interface_names.h"
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
 +#include "third_party/blink/renderer/core/page/chrome_client.h"
++#include "ui/display/screen_info.h"
  #include "third_party/blink/renderer/core/frame/local_frame_view.h"
  #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
  #include "third_party/blink/renderer/core/html/html_frame_element_base.h"
-@@ -201,6 +205,7 @@ void MouseEvent::SetCoordinatesFromWebPointerProperties(
+@@ -201,6 +206,7 @@ void MouseEvent::SetCoordinatesFromWebPointerProperties(
      MouseEventInit* initializer) {
    gfx::PointF client_point;
    gfx::PointF screen_point = web_pointer_properties.PositionInScreen();
@@ -98,7 +99,7 @@ index 19f0f66095..041a761c61 100644
    float inverse_zoom_factor = 1.0f;
    if (dom_window && dom_window->GetFrame() && dom_window->GetFrame()->View()) {
      LocalFrame* frame = dom_window->GetFrame();
-@@ -210,6 +215,7 @@ void MouseEvent::SetCoordinatesFromWebPointerProperties(
+@@ -210,6 +216,7 @@ void MouseEvent::SetCoordinatesFromWebPointerProperties(
            !p->GetPointerLockController().LockPending()) {
          p->GetPointerLockController().GetPointerLockPosition(&root_frame_point,
                                                               &screen_point);
@@ -106,7 +107,7 @@ index 19f0f66095..041a761c61 100644
        }
      }
      gfx::PointF frame_point =
-@@ -218,6 +224,24 @@ void MouseEvent::SetCoordinatesFromWebPointerProperties(
+@@ -218,6 +225,24 @@ void MouseEvent::SetCoordinatesFromWebPointerProperties(
      client_point = gfx::ScalePoint(frame_point, inverse_zoom_factor);
    }
  
