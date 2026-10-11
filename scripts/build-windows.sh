@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Cross-compile JithuBrowser for Windows x64 from Linux.
+# Prereqs: scripts/fetch-winsdk.sh (Microsoft toolchain via xwin) and a checkout
+# synced with JB_TARGET_OS="linux win" ./scripts/fetch.sh, patches applied.
+set -euo pipefail
+source "$(dirname "$0")/env.sh"
+source "$JB_ROOT/scripts/windows-cross-env.sh"
+cd "$JB_SRC"
+OUT=out/JithuBrowser-win
+mkdir -p "$OUT"
+cp "$JB_ROOT/args.gn" "$OUT/args.gn"
+cat >> "$OUT/args.gn" <<'ARGS'
+target_os = "win"
+target_cpu = "x64"
+use_clang_modules = false
+ARGS
+# Linux-only options in the shared args.gn do not apply on Windows; widevine/codecs do.
+gn gen "$OUT"
+autoninja -C "$OUT" -j "${JB_JOBS:-$(nproc)}" chrome chromedriver mini_installer
+ls -la "$OUT"/chrome.exe "$OUT"/mini_installer.exe

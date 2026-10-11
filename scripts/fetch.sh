@@ -15,8 +15,9 @@ solutions = [{
   "custom_vars": {"checkout_nacl": False, "checkout_pgo_profiles": True},
 }]
 GCLIENT
-  # target_os is appended by the caller for Windows builds (see scripts/windows/build.ps1).
-  echo "target_os = [\"${JB_TARGET_OS:-linux}\"]" >> .gclient
+  # JB_TARGET_OS is a space-separated list, e.g. JB_TARGET_OS="linux win" to also fetch
+  # the Windows-only dependencies needed to cross-compile the Windows build.
+  python3 -c 'import os; print("target_os = %r" % os.environ.get("JB_TARGET_OS", "linux").split())' >> .gclient
 fi
 gclient sync --no-history --shallow --nohooks -j "${JB_JOBS:-8}" --revision "src@refs/tags/$JB_CHROMIUM_VERSION"
 gclient runhooks -j "${JB_JOBS:-8}"
