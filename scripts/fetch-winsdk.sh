@@ -17,7 +17,9 @@ source "$(dirname "$0")/env.sh"
 [ "${JB_ACCEPT_MS_LICENSE:-0}" = 1 ] || { echo "Set JB_ACCEPT_MS_LICENSE=1 to accept Microsoft's licence terms (see header)." >&2; exit 1; }
 
 XWIN_VER=0.10.0
-SDK_VER="${JB_WINSDK_VERSION:-10.0.26100}"
+# Chromium 155 targets the Visual Studio 2026 toolchain (MSVC 14.5x) and Windows SDK 10.0.28000.
+SDK_VER="${JB_WINSDK_VERSION:-10.0.28000}"
+MANIFEST="${JB_VS_MANIFEST:-18}"
 BIN="$JB_WORK/xwin-bin"
 OUT="${JB_WINSYSROOT:-$JB_WORK/winsysroot}"
 mkdir -p "$BIN"
@@ -29,7 +31,43 @@ if [ ! -x "$BIN/xwin" ]; then
 fi
 
 rm -rf "$OUT"
-"$BIN/xwin" --accept-license --cache-dir "$BIN/cache" --arch x86,x86_64 --variant desktop --include-atl --sdk-version "$SDK_VER" \
+CACHE="$BIN/cache$MANIFEST"
+# Microsoft's VS 2026 manifest contains a literal space in some payload URLs ("w kits2"), which xwin
+# does not percent-encode. Fetch the manifests once, fix the URLs, serve the corrected package
+# manifest from a throwaway local web server and give xwin a channel file that points at it.
+MAN="$BIN/vs$MANIFEST.channel.fixed.json"
+if [ ! -f "$MAN" ]; then
+  "$BIN/xwin" --accept-license --cache-dir "$CACHE" --manifest-version "$MANIFEST" --arch x86_64 list >/dev/null
+  python3 - "$CACHE" "$BIN" "$MANIFEST" <<'PY'
+import glob, hashlib, json, sys
+cache, bin_, ver = sys.argv[1:]
+load = lambda f: json.loads(open(f, "rb").read().decode("utf-8-sig"))
+pkg = load(glob.glob(cache + "/dl/pkg_manifest_*.vsman")[0])
+def fix(o):
+    if isinstance(o, dict):
+        for k, v in list(o.items()):
+            if k == "url" and isinstance(v, str):
+                o[k] = v.replace(" ", "%20")
+            else:
+                fix(v)
+    elif isinstance(o, list):
+        for v in o:
+            fix(v)
+fix(pkg)
+data = json.dumps(pkg).encode()
+open(f"{bin_}/vs{ver}.pkg.vsman", "wb").write(data)
+ch = load(cache + f"/dl/manifest_{ver}.json")
+p = next(i for i in ch["channelItems"] if i["id"] == "Microsoft.VisualStudio.Manifests.VisualStudio")["payloads"][0]
+p["url"] = f"http://127.0.0.1:8765/vs{ver}.pkg.vsman"
+p["sha256"] = hashlib.sha256(data).hexdigest()
+p["size"] = len(data)
+json.dump(ch, open(f"{bin_}/vs{ver}.channel.fixed.json", "w"))
+PY
+fi
+(cd "$BIN" && python3 -m http.server 8765 --bind 127.0.0.1 >/dev/null 2>&1 & echo $! > "$BIN/httpd.pid")
+trap 'kill $(cat "$BIN/httpd.pid") 2>/dev/null || true' EXIT
+sleep 1
+"$BIN/xwin" --accept-license --cache-dir "$CACHE" --manifest "$MAN" --arch x86,x86_64 --variant desktop --include-atl --sdk-version "$SDK_VER" \
   splat --use-winsysroot-style --preserve-ms-arch-notation --output "$OUT"
 
 MSVC="$(basename "$(ls -d "$OUT"/VC/Tools/MSVC/14.*)")"
