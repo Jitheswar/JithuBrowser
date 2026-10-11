@@ -1,9 +1,9 @@
-Name:           jbrowser
+Name:           jithubrowser
 Version:        @VERSION@
 Release:        @RELEASE@
 Summary:        Privacy-focused web browser based on official Chromium
 License:        BSD-3-Clause
-URL:            https://github.com/Jitheswar/JBrowser
+URL:            https://github.com/Jitheswar/JithuBrowser
 ExclusiveArch:  x86_64
 AutoReqProv:    no
 Requires:       nss >= 3.26, nspr, alsa-lib, atk, at-spi2-atk, cups-libs, dbus-libs, libdrm, expat, mesa-libgbm, glib2, gtk3, pango, cairo, libX11, libxcb, libXcomposite, libXdamage, libXext, libXfixes, libxkbcommon, libXrandr, xdg-utils, ca-certificates, liberation-fonts
@@ -12,7 +12,7 @@ Requires:       nss >= 3.26, nspr, alsa-lib, atk, at-spi2-atk, cups-libs, dbus-l
 %global __os_install_post %{nil}
 
 %description
-JBrowser keeps websites from seeing tab switches, window focus, fullscreen,
+JithuBrowser keeps websites from seeing tab switches, window focus, fullscreen,
 DevTools, installed extensions, browser shortcuts and typing rhythm, while
 staying compatible with Chrome-only websites and Chrome Web Store extensions.
 
@@ -25,8 +25,8 @@ update-desktop-database -q /usr/share/applications >/dev/null 2>&1 || :
 gtk-update-icon-cache -q -t /usr/share/icons/hicolor >/dev/null 2>&1 || :
 
 %files
-/opt/jbrowser
-%attr(4755, root, root) /opt/jbrowser/chrome-sandbox
-/usr/bin/jbrowser
-/usr/share/applications/jbrowser.desktop
-/usr/share/icons/hicolor/*/apps/jbrowser.*
+/opt/jithubrowser
+%attr(4755, root, root) /opt/jithubrowser/chrome-sandbox
+/usr/bin/jithubrowser
+/usr/share/applications/jithubrowser.desktop
+/usr/share/icons/hicolor/*/apps/jithubrowser.*

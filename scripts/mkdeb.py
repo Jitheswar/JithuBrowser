@@ -15,13 +15,13 @@ set -e
 command -v update-desktop-database >/dev/null && update-desktop-database -q /usr/share/applications || true
 command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q -t /usr/share/icons/hicolor || true
 if command -v update-alternatives >/dev/null; then
-  update-alternatives --install /usr/bin/x-www-browser x-www-browser /usr/bin/jbrowser 120 || true
+  update-alternatives --install /usr/bin/x-www-browser x-www-browser /usr/bin/jithubrowser 120 || true
 fi
 """
 PRERM = """#!/bin/sh
 set -e
 if [ "$1" = remove ] && command -v update-alternatives >/dev/null; then
-  update-alternatives --remove x-www-browser /usr/bin/jbrowser || true
+  update-alternatives --remove x-www-browser /usr/bin/jithubrowser || true
 fi
 """
 

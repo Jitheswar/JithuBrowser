@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Configure and build JBrowser.  JB_JOBS controls ninja parallelism.
+# Configure and build JithuBrowser.  JB_JOBS controls ninja parallelism.
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
 cd "$JB_SRC"

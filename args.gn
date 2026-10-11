@@ -1,4 +1,4 @@
-# JBrowser release build arguments (shared by Linux and Windows).
+# JithuBrowser release build arguments (shared by Linux and Windows).
 is_official_build = true
 is_debug = false
 is_component_build = false

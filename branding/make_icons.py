@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render JBrowser icons (PNG sizes, Windows .ico, SVG) from one definition."""
+"""Render JithuBrowser icons (PNG sizes, Windows .ico, SVG) from one definition."""
 import os
 from PIL import Image, ImageDraw
 
@@ -45,7 +45,7 @@ def main():
     for s in (16, 22, 24, 32, 48, 64, 128, 256, 512):
         big.resize((s, s), Image.LANCZOS).save(os.path.join(OUT, f"product_logo_{s}.png"))
     big.save(os.path.join(OUT, "product_logo_1024.png"))
-    big.resize((256, 256), Image.LANCZOS).save(os.path.join(OUT, "jbrowser.ico"),
+    big.resize((256, 256), Image.LANCZOS).save(os.path.join(OUT, "jithubrowser.ico"),
                                                sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
     pts = " ".join(f"{x:.0f},{y:.0f}" for x, y in shield(None, S))
     svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
@@ -57,7 +57,7 @@ def main():
   </g>
 </svg>
 '''
-    open(os.path.join(OUT, "jbrowser.svg"), "w").write(svg)
+    open(os.path.join(OUT, "jithubrowser.svg"), "w").write(svg)
 
 
 if __name__ == "__main__":

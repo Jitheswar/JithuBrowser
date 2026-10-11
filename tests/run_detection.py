@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Automated JBrowser detection-suite runner.
+"""Automated JithuBrowser detection-suite runner.
 
 Serves tests/detection, launches a browser binary headless, then behaves like a
 user who switches tabs and opens DevTools while the page is watching:
@@ -104,7 +104,7 @@ def main():
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", http_port), Handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
 
-    profile = tempfile.mkdtemp(prefix="jb-detect-")
+    profile = tempfile.mkdtemp(prefix="jithu-detect-")
     url = f"http://127.0.0.1:{http_port}/index.html?auto=14"
     cmd = [args.browser, f"--remote-debugging-port={cdp_port}", f"--user-data-dir={profile}",
            "--no-first-run", "--no-default-browser-check", "--disable-gpu", "--no-sandbox", url]

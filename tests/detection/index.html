@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>JBrowser detection suite</title>
+<title>JithuBrowser detection suite</title>
 <style>
   :root { color-scheme: light dark; --bg:#fff; --fg:#111; --ok:#137333; --bad:#c5221f; --mut:#666; }
   @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#eee; --ok:#81c995; --bad:#f28b82; --mut:#999; } }
@@ -15,7 +15,7 @@
 </style>
 </head>
 <body>
-<h1>JBrowser detection suite</h1>
+<h1>JithuBrowser detection suite</h1>
 <p>Each row is a technique websites use to watch what you do. <b>PASS</b> means the page learned nothing.
 Switch tabs, minimise, open DevTools, press F11, then press <button id="finish">Finish</button> (auto-finishes in automation).</p>
 <table><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead><tbody id="rows"></tbody></table>
@@ -114,7 +114,7 @@ async function finish() {
   let he = null; try { he = uad && await uad.getHighEntropyValues(['architecture', 'bitness', 'model', 'platformVersion', 'fullVersionList', 'wow64', 'formFactors']); } catch {}
   const brands = uad ? uad.brands.map(b => b.brand) : [];
   add('UA: looks like Google Chrome (site compat)', /Chrome\/\d+\.0\.0\.0 Safari\/537\.36$/.test(ua) && brands.includes('Google Chrome'), { ua, brands });
-  add('UA: no JBrowser/Headless tokens', !/JBrowser|Headless/i.test(ua) && !brands.some(b => /Headless|JBrowser/.test(b)), ua);
+  add('UA: no JithuBrowser/Headless tokens', !/JithuBrowser|Headless/i.test(ua) && !brands.some(b => /Headless|JithuBrowser/.test(b)), ua);
   add('Client Hints: high-entropy values reduced', !!he && (he.platformVersion === '' || /^\d+\.0\.0$/.test(he.platformVersion)) && he.model === '' &&
       (he.fullVersionList || []).every(v => /^\d+\.0\.0\.0$/.test(v.version)), he);
 

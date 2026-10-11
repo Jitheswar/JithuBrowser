@@ -1,12 +1,12 @@
-# JBrowser
+# JithuBrowser
 
 **A privacy-focused browser built on official Chromium.** Websites keep working, including Chrome-only ones, and Chrome Web Store extensions install normally. Pages just can't watch what you do.
 
 > Status: **work in progress.** The patch set and build pipeline are under active development; see [ROADMAP](docs/ROADMAP.md).
 
-## What JBrowser hides from websites
+## What JithuBrowser hides from websites
 
-| Area | What sites normally learn | JBrowser |
+| Area | What sites normally learn | JithuBrowser |
 |---|---|---|
 | Page Visibility API | When you switch tabs or minimise | Page always looks visible |
 | Focus / blur | When you click into another window | No window blur/focus, `hasFocus()` is true |
@@ -18,19 +18,19 @@
 | Keyboard | Browser/OS shortcuts you press (F12, Ctrl+Tab, Ctrl+T, PrintScreen, Super), keystroke-timing biometrics, keyboard layout | Shortcuts never reach the page, key timing is jittered, layout map is standard |
 | Automation | `navigator.webdriver` | Always `false` |
 
-Each protection is a Chromium feature flag that's on by default. Turn any of them off in `chrome://flags` (search "JBrowser") if a site really needs it.
+Each protection is a Chromium feature flag that's on by default. Turn any of them off in `chrome://flags` (search "JithuBrowser") if a site really needs it.
 
 ## Downloads
 
-Releases: https://github.com/Jitheswar/JBrowser/releases
+Releases: https://github.com/Jitheswar/JithuBrowser/releases
 
 | Platform | Package |
 |---|---|
-| Windows 10/11 x64 | `JBrowser-<ver>-windows-x64-installer.exe` / portable `.zip` |
-| Debian / Ubuntu / Mint / Pop!_OS | `jbrowser_<ver>_amd64.deb` (`sudo apt install ./jbrowser_*.deb`) |
-| Red Hat / Fedora / Rocky / Alma / openSUSE | `jbrowser-<ver>.x86_64.rpm` (`sudo dnf install ./jbrowser-*.rpm`) |
+| Windows 10/11 x64 | `JithuBrowser-<ver>-windows-x64-installer.exe` / portable `.zip` |
+| Debian / Ubuntu / Mint / Pop!_OS | `jithubrowser_<ver>_amd64.deb` (`sudo apt install ./jithubrowser_*.deb`) |
+| Red Hat / Fedora / Rocky / Alma / openSUSE | `jithubrowser-<ver>.x86_64.rpm` (`sudo dnf install ./jithubrowser-*.rpm`) |
 | Arch / Manjaro / EndeavourOS | [`packaging/arch/PKGBUILD`](packaging/arch/PKGBUILD) (`makepkg -si`) |
-| Any Linux | `jbrowser-<ver>-linux-x64.tar.xz` (extract and run `./jbrowser`) |
+| Any Linux | `jithubrowser-<ver>-linux-x64.tar.xz` (extract and run `./jithubrowser`) |
 
 ## Building
 
@@ -49,4 +49,4 @@ See [docs/BUILDING.md](docs/BUILDING.md). Short version on Linux:
 
 ## License
 
-BSD-3-Clause for JBrowser's own patches and scripts. Chromium and its components keep their own licenses.
+BSD-3-Clause for JithuBrowser's own patches and scripts. Chromium and its components keep their own licenses.
