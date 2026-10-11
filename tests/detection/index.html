@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JBrowser detection suite</title>
+<style>
+  :root { color-scheme: light dark; --bg:#fff; --fg:#111; --ok:#137333; --bad:#c5221f; --mut:#666; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#eee; --ok:#81c995; --bad:#f28b82; --mut:#999; } }
+  body { background:var(--bg); color:var(--fg); font:14px/1.45 system-ui, sans-serif; margin:0 auto; max-width:960px; padding:16px; }
+  table { border-collapse:collapse; width:100%; }
+  td, th { border-bottom:1px solid #8884; padding:6px 8px; text-align:left; vertical-align:top; }
+  .pass { color:var(--ok); font-weight:600; } .fail { color:var(--bad); font-weight:600; }
+  code { font-size:12px; word-break:break-all; color:var(--mut); }
+</style>
+</head>
+<body>
+<h1>JBrowser detection suite</h1>
+<p>Each row is a technique websites use to watch what you do. <b>PASS</b> means the page learned nothing.
+Switch tabs, minimise, open DevTools, press F11, then press <button id="finish">Finish</button> (auto-finishes in automation).</p>
+<table><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead><tbody id="rows"></tbody></table>
+<script>
+'use strict';
+const results = {};
+const log = { visibilitychange: 0, windowBlur: 0, windowFocus: 0, focusoutWin: 0,
+              fullscreenchange: 0, hiddenSeen: false, hasFocusFalse: false,
+              resizeOuterDiff: [], consoleGetterHits: 0, debuggerMaxMs: 0 };
+
+// ---------- Event listeners (visibility / focus / fullscreen) ----------
+document.addEventListener('visibilitychange', () => { log.visibilitychange++; if (document.hidden) log.hiddenSeen = true; }, true);
+addEventListener('blur', e => { if (e.target === window) log.windowBlur++; }, true);
+addEventListener('focus', e => { if (e.target === window) log.windowFocus++; }, true);
+addEventListener('pagehide', () => {}, true);
+document.addEventListener('fullscreenchange', () => log.fullscreenchange++, true);
+document.addEventListener('webkitfullscreenchange', () => log.fullscreenchange++, true);
+setInterval(() => {
+  if (document.hidden || document.visibilityState !== 'visible') log.hiddenSeen = true;
+  if (!document.hasFocus()) log.hasFocusFalse = true;
+  log.resizeOuterDiff.push([outerWidth - innerWidth, outerHeight - innerHeight]);
+}, 100);
+
+// ---------- DevTools detection probes (run continuously) ----------
+const bait = document.createElement('div');
+Object.defineProperty(bait, 'id', { get() { log.consoleGetterHits++; return 'x'; } });
+const errBait = new Error('bait');
+Object.defineProperty(errBait, 'stack', { get() { log.consoleGetterHits++; return ''; } });
+const reBait = /bait/;
+reBait.toString = () => { log.consoleGetterHits++; return '/bait/'; };
+const dateBait = new Date();
+dateBait.toString = () => { log.consoleGetterHits++; return ''; };
+function fnBait() {}
+fnBait.toString = () => { log.consoleGetterHits++; return ''; };
+setInterval(() => {
+  console.log('%c', bait); console.log(errBait); console.log(reBait); console.log(dateBait); console.debug(fnBait);
+  console.clear();
+  const t0 = performance.now();
+  // eslint-disable-next-line no-debugger
+  debugger;
+  log.debuggerMaxMs = Math.max(log.debuggerMaxMs, performance.now() - t0);
+}, 500);
+
+// ---------- Helpers ----------
+function add(name, pass, detail) {
+  results[name] = { pass, detail };
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td>${name}</td><td class="${pass ? 'pass' : 'fail'}">${pass ? 'PASS' : 'FAIL'}</td><td><code></code></td>`;
+  tr.querySelector('code').textContent = typeof detail === 'string' ? detail : JSON.stringify(detail);
+  document.getElementById('rows').appendChild(tr);
+}
+const isNative = f => { try { return /\{\s*\[native code\]\s*\}$/.test(Function.prototype.toString.call(f)); } catch { return false; } };
+
+async function probeExtension(id, path) {
+  const t0 = performance.now();
+  try { const r = await fetch(`chrome-extension://${id}/${path}`); return { ok: true, status: r.status, ms: performance.now() - t0 }; }
+  catch (e) { return { ok: false, err: String(e), ms: performance.now() - t0 }; }
+}
+function imgProbe(id, path) {
+  return new Promise(res => { const i = new Image(); const t0 = performance.now();
+    i.onload = () => res({ loaded: true, ms: performance.now() - t0 });
+    i.onerror = () => res({ loaded: false, ms: performance.now() - t0 });
+    i.src = `chrome-extension://${id}/${path}`; });
+}
+function sendMessageProbe(id) {
+  return new Promise(res => {
+    try {
+      if (!window.chrome || !chrome.runtime || !chrome.runtime.sendMessage) return res({ api: false });
+      chrome.runtime.sendMessage(id, { ping: 1 }, r => res({ api: true, reply: r, err: chrome.runtime.lastError && chrome.runtime.lastError.message }));
+    } catch (e) { res({ api: true, threw: String(e) }); }
+  });
+}
+
+async function finish() {
+  if (window.__done) return; window.__done = true;
+  add('Page Visibility: document.hidden never true', !log.hiddenSeen, { hidden: document.hidden, state: document.visibilityState });
+  add('Page Visibility: no visibilitychange events', log.visibilitychange === 0, log.visibilitychange);
+  add('Focus: no window blur/focus events', log.windowBlur === 0 && log.windowFocus === 0, { blur: log.windowBlur, focus: log.windowFocus });
+  add('Focus: document.hasFocus() always true', !log.hasFocusFalse, document.hasFocus());
+  add('Fullscreen: no fullscreenchange leak of user F11', log.fullscreenchange === 0, log.fullscreenchange);
+  const diffs = log.resizeOuterDiff.map(d => d.join(','));
+  add('Window chrome size constant (DevTools dock)', new Set(diffs).size <= 1, [...new Set(diffs)].slice(0, 5));
+  add('DevTools: console never invokes page getters', log.consoleGetterHits === 0, log.consoleGetterHits);
+  add('DevTools: debugger statement never pauses', log.debuggerMaxMs < 50, log.debuggerMaxMs.toFixed(1) + 'ms');
+
+  // Extension probing: uBlock Origin, Google Docs offline, a random non-existent id
+  const ids = ['cjpalhdlnbpafiamejdnhcphjbkeiagm', 'ghbmnnjooekpmoecnnnilnnbdlolhkhi', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'];
+  const probes = [];
+  for (const id of ids) probes.push({ id, fetch: await probeExtension(id, 'manifest.json'), img: await imgProbe(id, 'icon.png'), msg: await sendMessageProbe(id) });
+  const shape = p => JSON.stringify([p.fetch.ok, p.fetch.status || p.fetch.err, p.img.loaded, p.msg.api, p.msg.err || null, p.msg.reply || null]);
+  add('Extensions: installed vs absent indistinguishable', new Set(probes.map(shape)).size === 1, probes.map(p => ({ id: p.id.slice(0, 6), s: shape(p) })));
+
+  // UA / Client Hints
+  const ua = navigator.userAgent;
+  const uad = navigator.userAgentData;
+  let he = null; try { he = uad && await uad.getHighEntropyValues(['architecture', 'bitness', 'model', 'platformVersion', 'fullVersionList', 'wow64', 'formFactors']); } catch {}
+  const brands = uad ? uad.brands.map(b => b.brand) : [];
+  add('UA: looks like Google Chrome (site compat)', /Chrome\/\d+\.0\.0\.0 Safari\/537\.36$/.test(ua) && brands.includes('Google Chrome'), { ua, brands });
+  add('UA: no JBrowser/Headless tokens', !/JBrowser|Headless/i.test(ua) && !brands.some(b => /Headless|JBrowser/.test(b)), ua);
+  add('Client Hints: high-entropy values reduced', !!he && (he.platformVersion === '' || /^\d+\.0\.0$/.test(he.platformVersion)) && he.model === '' &&
+      (he.fullVersionList || []).every(v => /^\d+\.0\.0\.0$/.test(v.version)), he);
+
+  // History
+  add('History: history.length does not leak depth', history.length <= 2, history.length);
+  // Automation / misc
+  add('navigator.webdriver is false', navigator.webdriver === false, navigator.webdriver);
+  add('Natives not visibly patched', [Document.prototype.hasFocus, Object.getOwnPropertyDescriptor(Document.prototype, 'hidden').get, Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState').get].every(isNative), 'toString check');
+  const samples = []; for (let i = 0; i < 2000; i++) samples.push(performance.now());
+  const deltas = samples.slice(1).map((v, i) => v - samples[i]).filter(d => d > 0);
+  const minStep = deltas.length ? Math.min(...deltas) : 0;
+  add('Timers coarsened (>=0.1ms)', minStep === 0 || minStep >= 0.099, minStep);
+
+  // Worker: same answers inside a worker
+  const w = new Worker(URL.createObjectURL(new Blob([`postMessage({ua:navigator.userAgent, wd:navigator.webdriver})`], { type: 'text/javascript' })));
+  const wr = await new Promise(r => { w.onmessage = e => r(e.data); setTimeout(() => r(null), 2000); });
+  add('Worker UA matches window UA', !!wr && wr.ua === ua, wr);
+
+  const passed = Object.values(results).filter(r => r.pass).length;
+  document.title = `DONE ${passed}/${Object.keys(results).length}`;
+  try { await fetch('/report', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ results, log }) }); } catch {}
+}
+document.getElementById('finish').onclick = finish;
+const auto = new URLSearchParams(location.search).get('auto');
+if (auto) setTimeout(finish, Number(auto) * 1000);
+</script>
+</body>
+</html>

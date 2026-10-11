@@ -1,0 +1,5 @@
+/out/
+/build-work/
+*.pyc
+__pycache__/
+/dist/
