@@ -15,6 +15,9 @@ cat >> "$OUT/args.gn" <<'ARGS'
 target_os = "win"
 target_cpu = "x64"
 use_clang_modules = false
+# dxildia (inside Dawn's built DXC) needs dia2.h from Visual Studio's DIA SDK, which the public
+# toolchain download does not include. WebGPU then uses the system FXC compiler instead.
+dawn_use_built_dxc = false
 ARGS
 # Linux-only options in the shared args.gn do not apply on Windows; widevine/codecs do.
 gn gen "$OUT"

@@ -2,7 +2,7 @@
 
 **A privacy-focused browser built on official Chromium.** Websites keep working, including Chrome-only ones, and Chrome Web Store extensions install normally. Pages just can't watch what you do.
 
-> Status: **work in progress, no release yet.** All protections are implemented and pass the 14-test privacy suite on a Linux dev build of Chromium 155 (stock Chrome 155 fails 12 of the 14). Release packages are not built yet. The download table below describes the planned release packages; nothing is published until a GitHub release exists.
+> Status: **first Linux pre-release available** ([download](https://github.com/Jitheswar/JithuBrowser/releases)). All protections pass the 19-test privacy suite on the release binary (stock Chrome 155 fails 15 of the 19). **Windows is not available yet**; it is being cross-compiled and will be added to a later release.
 
 ## What JithuBrowser hides from websites
 
@@ -34,7 +34,7 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for what is still planned and [docs/DESIG
 
 You do **not** need to compile anything. Download the ready-made file for your computer, install it, done.
 
-> **Status:** JithuBrowser is an early project and **no release has been published yet**. Check the [Releases page](https://github.com/Jitheswar/JithuBrowser/releases/latest) to see which files exist. If it says there is nothing there, the packages are still being built: come back later or click **Watch** on this repository.
+> **Status:** JithuBrowser is an early project. The first **Linux** pre-release is on the [Releases page](https://github.com/Jitheswar/JithuBrowser/releases). **Windows is not available yet**; click **Watch** on this repository to hear when it is.
 
 ### Step 1: Which computer do you have?
 
@@ -50,7 +50,7 @@ You do **not** need to compile anything. Download the ready-made file for your c
 Not sure which Linux you have? Open a terminal and type `cat /etc/os-release`. The first lines name your distribution.
 Your computer must be 64-bit (x86_64). ARM computers such as a Raspberry Pi are not supported yet.
 
-Every file comes from **https://github.com/Jitheswar/JithuBrowser/releases/latest**. Scroll to **Assets** and click the file you need.
+Every file comes from **https://github.com/Jitheswar/JithuBrowser/releases**. Scroll to **Assets** and click the file you need.
 
 ### Windows
 

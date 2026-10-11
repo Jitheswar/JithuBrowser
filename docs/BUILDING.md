@@ -40,4 +40,4 @@ JB_ACCEPT_MS_LICENSE=1 ./scripts/fetch-winsdk.sh     # accepts Microsoft's Visua
 source scripts/env.sh && source scripts/windows-cross-env.sh
 ```
 
-Patch `0010` makes Chromium accept SDK 10.0.26100 (it names the newer 28000 SDK). Windows binaries cannot be run on Linux, so a cross-built `.exe` is untested until someone runs it on Windows.
+The toolchain is the one Chromium 155 targets (MSVC 14.51, Windows SDK 10.0.28000). `scripts/fix-winsdk-case.py` adds symlinks for the header spellings Chromium uses (Windows is case-insensitive, Linux is not). Windows binaries cannot be run on Linux, so a cross-built `.exe` is untested until someone runs it on Windows.

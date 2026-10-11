@@ -14,7 +14,7 @@ provides=('jithubrowser')
 conflicts=('jithubrowser')
 options=('!strip' '!debug')
 source=("https://github.com/Jitheswar/JithuBrowser/releases/download/v${pkgver}/jithubrowser-${pkgver}-linux-x64.tar.xz")
-sha256sums=('SKIP')
+sha256sums=('a6d3535cc83e645f6f9ceacb6da994d032e6e7026e055241a3eb29fffb6721bb')
 
 package() {
   local src="$srcdir/jithubrowser-${pkgver}-linux-x64"
