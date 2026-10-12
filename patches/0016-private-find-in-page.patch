@@ -1,0 +1,26 @@
+diff --git a/third_party/blink/renderer/core/editing/finder/find_buffer.cc b/third_party/blink/renderer/core/editing/finder/find_buffer.cc
+index 583930536a..d62cfd65a8 100644
+--- a/third_party/blink/renderer/core/editing/finder/find_buffer.cc
++++ b/third_party/blink/renderer/core/editing/finder/find_buffer.cc
+@@ -39,6 +39,7 @@
+ #include "third_party/blink/renderer/platform/text/unicode_utilities.h"
+ #include "third_party/blink/renderer/platform/wtf/text/character_names.h"
+ #include "third_party/blink/renderer/platform/wtf/text/unicode.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ 
+ namespace blink {
+ 
+@@ -96,8 +97,11 @@ bool FindBuffer::ShouldIgnoreContents(const Node& node) {
+          IsA<HTMLVideoElement>(*element) || IsA<HTMLAudioElement>(*element) ||
+          (element->GetDisplayLockContext() &&
+           element->GetDisplayLockContext()->IsLocked() &&
+-          !element->GetDisplayLockContext()->IsActivatable(
+-              DisplayLockActivationReason::kFindInPage));
++          // JithuBrowser: also skip locked content that Find could activate, so a match in collapsed
++          // content never fires beforematch/toggle events at the page.
++          (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserPrivateFindInPage) ||
++           !element->GetDisplayLockContext()->IsActivatable(
++               DisplayLockActivationReason::kFindInPage)));
+ }
+ 
+ std::optional<UChar> FindBuffer::CharConstantForNode(const Node& node) {

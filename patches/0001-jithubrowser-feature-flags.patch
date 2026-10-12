@@ -12,10 +12,10 @@ index 8e635b0da3..c37d7fd29b 100644
      "fenced_frame/redacted_fenced_frame_config_mojom_traits.cc",
 diff --git a/third_party/blink/common/jithubrowser_features.cc b/third_party/blink/common/jithubrowser_features.cc
 new file mode 100644
-index 0000000000..4e10602b76
+index 0000000000..4fceab61db
 --- /dev/null
 +++ b/third_party/blink/common/jithubrowser_features.cc
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,26 @@
 +// Copyright 2026 The JithuBrowser Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -39,6 +39,8 @@ index 0000000000..4e10602b76
 +
 +BASE_FEATURE(kJithuBrowserKeepHiddenTabsActive, base::FEATURE_ENABLED_BY_DEFAULT);
 +
++BASE_FEATURE(kJithuBrowserPrivateFindInPage, base::FEATURE_ENABLED_BY_DEFAULT);
++
 +}  // namespace jithubrowser::features
 diff --git a/third_party/blink/public/common/BUILD.gn b/third_party/blink/public/common/BUILD.gn
 index 5a5d9a64a4..60e082e35d 100644
@@ -54,10 +56,10 @@ index 5a5d9a64a4..60e082e35d 100644
      "fenced_frame/redacted_fenced_frame_config_mojom_traits.h",
 diff --git a/third_party/blink/public/common/jithubrowser_features.h b/third_party/blink/public/common/jithubrowser_features.h
 new file mode 100644
-index 0000000000..656e3693d7
+index 0000000000..d256342dc1
 --- /dev/null
 +++ b/third_party/blink/public/common/jithubrowser_features.h
-@@ -0,0 +1,68 @@
+@@ -0,0 +1,73 @@
 +// Copyright 2026 The JithuBrowser Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -118,6 +120,11 @@ index 0000000000..656e3693d7
 +// a tab being screen-captured), so a page cannot tell it is in the background from its timers
 +// (setInterval/setTimeout rate) or requestAnimationFrame. Costs CPU/battery for background tabs.
 +BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserKeepHiddenTabsActive);
++
++// Find in page does not search inside collapsed or hidden-until-found content (closed <details>,
++// hidden=until-found, content-visibility), so a page cannot plant hidden "canary" text and learn what
++// the user searched for from the beforematch / toggle events that a match would trigger.
++BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserPrivateFindInPage);
 +
 +// Height of the browser UI (tab strip + toolbar) that the spoofed window
 +// geometry reports above the viewport.

@@ -327,6 +327,49 @@ def test_hidden_tab_timers_and_animation_frames_keep_running(raw):
     assert t["raf"] >= 40, t
 
 
+@needs_display
+@pytest.mark.skipif(not shutil.which("xdotool"), reason="needs xdotool to press real keys")
+def test_find_in_page_search_is_not_reported_to_the_page(raw):
+    """Pages can hide 'canary' text in collapsed content and learn what the user searched for from the events
+    a find-in-page match triggers (beforematch on hidden=until-found, toggle on <details>)."""
+    raw.spy_tab.ev("""document.body.innerHTML = '<div hidden="until-found" id=d>my secret phrase</div>' +
+        '<details id=det><summary>more</summary>another secret inside</details><p>visible text</p>';
+        window.__f = [];
+        d.addEventListener('beforematch', () => __f.push('beforematch'));
+        det.addEventListener('toggle', () => __f.push('toggle'));""")
+    raw.focus_os_window()
+    time.sleep(0.5)
+    subprocess.run(["xdotool", "key", "ctrl+f"], check=False)
+    time.sleep(1.0)
+    subprocess.run(["xdotool", "type", "--delay", "80", "secret"], check=False)
+    time.sleep(0.5)
+    subprocess.run(["xdotool", "key", "Return"], check=False)
+    time.sleep(1.5)
+    assert raw.spy_tab.ev("__f.slice()") == []
+
+
+@needs_display
+def test_hidden_tab_does_not_pause_video(raw):
+    """Stock Chrome pauses a muted video the moment its tab is hidden, and the page gets a 'pause' event."""
+    raw.spy_tab.ev("""document.body.innerHTML = '<video id=v muted loop playsinline width=320 src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.webm"></video>';
+        window.__ev = []; const v = document.getElementById('v');
+        for (const t of ['pause']) v.addEventListener(t, () => __ev.push(t));
+        v.play().catch(() => {});""", )
+    for _ in range(20):
+        time.sleep(1)
+        if raw.spy_tab.ev("document.getElementById('v').readyState") == 4:
+            break
+    else:
+        pytest.skip("test video could not be loaded (needs internet)")
+    time.sleep(1)
+    raw.spy_tab.ev("__ev.length = 0")
+    raw.open("about:blank", spy=False)               # the video's tab is now hidden
+    time.sleep(5)
+    r = raw.spy_tab.ev("({paused: document.getElementById('v').paused, ev: __ev.slice()})")
+    raw.activate(raw.spy_tab)
+    assert r == {"paused": False, "ev": []}, r
+
+
 # --------------------------------------------------------------------------------
 # Playwright tests (independent of window state)
 # --------------------------------------------------------------------------------
