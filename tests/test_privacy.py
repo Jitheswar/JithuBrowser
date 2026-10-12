@@ -315,6 +315,15 @@ def test_wake_lock_does_not_reveal_hidden_tab(raw):
 def playwright_browser():
     _require_browser()
     with sync_playwright() as p:
+        if os.environ.get("JITHU_CDP_ONLY"):
+            # Browsers started through a wrapper (e.g. a Windows build under Wine) cannot use
+            # Playwright's pipe transport; attach over the DevTools port instead.
+            rb = RawBrowser(BROWSER)
+            browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{rb.port}")
+            yield browser.contexts[0]
+            browser.close()
+            rb.quit()
+            return
         args = ["--no-sandbox", "--disable-gpu"]
         if not REAL_DISPLAY:
             args.append("--ozone-platform=headless")

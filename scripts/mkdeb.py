@@ -36,7 +36,8 @@ def root_owned(ti):
 
 def tar_xz(add):
     buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:xz", preset=6) as t:
+    # GNU format: dpkg's own tar reader rejects the PAX extended headers (type 'x') that Python writes by default.
+    with tarfile.open(fileobj=buf, mode="w:xz", preset=6, format=tarfile.GNU_FORMAT) as t:
         add(t)
     return buf.getvalue()
 
