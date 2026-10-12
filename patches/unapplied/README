@@ -1,2 +1,3 @@
-Patches here are NOT in patches/series. Both are corrupt (git apply --check fails: 0018 line 37, 0019 line 10) and cannot be applied as written.
-0019 fakes extension answers to sites, which JithuBrowser does not implement.
+Patches here are NOT in patches/series.
+0019 is corrupt (git apply --check fails at line 10) and fakes extension answers to sites, which JithuBrowser does not implement.
+0018 (DOM extension hiding) was dropped: filtering a few DOM lookups cannot hide extension DOM from a page, so it would claim more than it delivers.
