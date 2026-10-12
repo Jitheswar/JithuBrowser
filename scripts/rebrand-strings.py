@@ -14,21 +14,30 @@ import re
 import sys
 
 src = sys.argv[1]
-FILES = [
-    "chrome/app/chromium_strings.grd",
-    "chrome/app/settings_chromium_strings.grdp",
-    "components/components_chromium_strings.grd",
-    "extensions/strings/extensions_chromium_strings.grdp",
-]
+ROOTS = ["chrome", "components", "extensions", "content", "ui", "services"]
+SKIP = ("/ios", "/android", "/chromeos", "/ash/", "/test", "/tests/", "google_chrome", "/out/", "node_modules", "/third_party/")
+
+
+def string_sources():
+    for root in ROOTS:
+        for dirpath, dirnames, filenames in os.walk(os.path.join(src, root)):
+            dirnames[:] = [d for d in dirnames if d not in ("out", "node_modules", "third_party", ".git")]
+            for f in filenames:
+                if f.endswith((".grd", ".grdp")):
+                    path = os.path.join(dirpath, f)
+                    rel = os.path.relpath(path, src)
+                    if not any(k in "/" + rel for k in SKIP):
+                        yield rel
 # "Chromium" as a standalone word: not part of a URL/domain/path/identifier, not "Chromium OS".
 WORD = re.compile(r"(?<![\w./@_:-])Chromium(?![\w@_/-])(?!\.\w)(?! OS)")
 total = 0
-for rel in FILES:
+for rel in sorted(string_sources()):
     path = os.path.join(src, rel)
     text = open(path, encoding="utf-8").read()
     new, n = WORD.subn("JithuBrowser", text)
     if n:
         open(path, "w", encoding="utf-8").write(new)
     total += n
-    print(f"{rel}: {n} replacements")
+    if n:
+        print(f"{rel}: {n} replacements")
 print(f"rebranded {total} strings")
