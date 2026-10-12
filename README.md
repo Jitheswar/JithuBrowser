@@ -2,7 +2,7 @@
 
 **A privacy-focused browser built on official Chromium.** Websites keep working, including Chrome-only ones, and Chrome Web Store extensions install normally. Pages just can't watch what you do.
 
-> Status: **first Linux pre-release available** ([download](https://github.com/Jitheswar/JithuBrowser/releases)). All protections pass the 19-test privacy suite on the release binary (stock Chrome 155 fails 15 of the 19). **Windows is not available yet**; it is being cross-compiled and will be added to a later release.
+> Status: **pre-release available** ([download](https://github.com/Jitheswar/JithuBrowser/releases)) for Linux x86_64 and Windows x64. All protections pass the 19-test privacy suite on the Linux build (stock Chrome 155 fails 15 of the 19). The **Windows installer is cross-compiled and untested** on real Windows.
 
 ## What JithuBrowser hides from websites
 
@@ -34,7 +34,7 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for what is still planned and [docs/DESIG
 
 You do **not** need to compile anything. Download the ready-made file for your computer, install it, done.
 
-> **Status:** JithuBrowser is an early project. The first **Linux** pre-release is on the [Releases page](https://github.com/Jitheswar/JithuBrowser/releases). **Windows is not available yet**; click **Watch** on this repository to hear when it is.
+> **Status:** JithuBrowser is an early project. Pre-releases for **Linux** and **Windows** are on the [Releases page](https://github.com/Jitheswar/JithuBrowser/releases). The Windows installer has not been tested on real Windows yet.
 
 ### Step 1: Which computer do you have?
 
@@ -54,12 +54,12 @@ Every file comes from **https://github.com/Jitheswar/JithuBrowser/releases**. Sc
 
 ### Windows
 
-1. Download the file ending in `-windows-x64-installer.exe` (or the `.zip` for a no-install version).
+1. Download the file ending in `-windows-x64-installer.exe`.
 2. Double-click it.
 3. **If Windows shows a blue "Windows protected your PC" screen:** the installer is not signed with a paid code-signing certificate, which is normal for new open-source projects. Click **More info**, then **Run anyway**. Only do this for a file you downloaded from the Releases page above.
 4. Follow the installer, then open **JithuBrowser** from the Start menu.
 
-> The Windows build is cross-compiled on Linux and has had less testing than the Linux build. If something does not work, please [report it](https://github.com/Jitheswar/JithuBrowser/issues).
+> **The Windows build is cross-compiled on Linux and has never been run on Windows.** Expect rough edges, and please [report problems](https://github.com/Jitheswar/JithuBrowser/issues). Do not install it next to Chromium on the same PC.
 
 ### Debian, Ubuntu, Linux Mint, Pop!_OS
 
