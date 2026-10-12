@@ -1,0 +1,150 @@
+diff --git a/components/gcm_driver/gcm_driver_desktop.cc b/components/gcm_driver/gcm_driver_desktop.cc
+index 16e142aed3..8a763f55c8 100644
+--- a/components/gcm_driver/gcm_driver_desktop.cc
++++ b/components/gcm_driver/gcm_driver_desktop.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "components/gcm_driver/gcm_driver_desktop.h"
++#include "base/command_line.h"
+ 
+ #include <memory>
+ #include <utility>
+@@ -1192,6 +1193,13 @@ GCMClient::Result GCMDriverDesktop::EnsureStarted(
+   if (gcm_started_)
+     return GCMClient::SUCCESS;
+ 
++  // JithuBrowser: --jithubrowser-quiet-google keeps Chromium's push messaging
++  // client (Google check-in and registration requests) from ever starting.
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++          "jithubrowser-quiet-google")) {
++    return GCMClient::UNKNOWN_ERROR;
++  }
++
+   // Have any app requested the service?
+   if (app_handlers().empty())
+     return GCMClient::UNKNOWN_ERROR;
+diff --git a/components/signin/core/browser/account_investigator.cc b/components/signin/core/browser/account_investigator.cc
+index 605741b586..87f120bb9e 100644
+--- a/components/signin/core/browser/account_investigator.cc
++++ b/components/signin/core/browser/account_investigator.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "components/signin/core/browser/account_investigator.h"
++#include "base/command_line.h"
+ 
+ #include <algorithm>
+ #include <iterator>
+@@ -82,6 +83,12 @@ void AccountInvestigator::RegisterPrefs(PrefRegistrySimple* registry) {
+ }
+ 
+ void AccountInvestigator::Initialize() {
++  // JithuBrowser: --jithubrowser-quiet-google skips this periodic Google
++  // account-cookie check (it only feeds metrics).
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++          "jithubrowser-quiet-google")) {
++    return;
++  }
+   identity_manager_->AddObserver(this);
+   previously_authenticated_ =
+       identity_manager_->HasPrimaryAccount(signin::ConsentLevel::kSignin);
+diff --git a/components/network_time/network_time_tracker.cc b/components/network_time/network_time_tracker.cc
+index ada5634005..45bba0ed06 100644
+--- a/components/network_time/network_time_tracker.cc
++++ b/components/network_time/network_time_tracker.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "components/network_time/network_time_tracker.h"
++#include "base/command_line.h"
+ 
+ #include <stdint.h>
+ 
+@@ -470,7 +471,9 @@ void NetworkTimeTracker::CheckTime() {
+   // timer to its default faster frequency.
+   QueueCheckTime(interval);
+ 
+-  if (!ShouldIssueTimeQuery()) {
++  if (!ShouldIssueTimeQuery() ||
++      base::CommandLine::ForCurrentProcess()->HasSwitch(
++          "jithubrowser-quiet-google")) {
+     return;
+   }
+ 
+diff --git a/components/update_client/net/network_impl.cc b/components/update_client/net/network_impl.cc
+index d79ad68638..e8744fc4d0 100644
+--- a/components/update_client/net/network_impl.cc
++++ b/components/update_client/net/network_impl.cc
+@@ -3,6 +3,8 @@
+ // found in the LICENSE file.
+ 
+ #include "components/update_client/net/network_impl.h"
++#include "base/command_line.h"
++#include "base/task/single_thread_task_runner.h"
+ 
+ #include <memory>
+ #include <utility>
+@@ -122,6 +124,17 @@ void NetworkFetcherImpl::PostRequest(
+     ResponseStartedCallback response_started_callback,
+     ProgressCallback progress_callback,
+     PostRequestCompleteCallback post_request_complete_callback) {
++  // JithuBrowser: --jithubrowser-quiet-google stops all update-client traffic.
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++          "jithubrowser-quiet-google")) {
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE,
++        base::BindOnce(std::move(post_request_complete_callback), std::nullopt,
++                       static_cast<int>(net::ERR_INTERNET_DISCONNECTED),
++                       std::string(), std::string(), std::string(),
++                       int64_t{-1}));
++    return;
++  }
+   auto resource_request = std::make_unique<network::ResourceRequest>();
+   resource_request->url = url;
+   resource_request->method = "POST";
+@@ -172,6 +185,15 @@ base::OnceClosure NetworkFetcherImpl::DownloadToFile(
+     ResponseStartedCallback response_started_callback,
+     ProgressCallback progress_callback,
+     DownloadToFileCompleteCallback download_to_file_complete_callback) {
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++          "jithubrowser-quiet-google")) {
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE,
++        base::BindOnce(std::move(download_to_file_complete_callback),
++                       static_cast<int>(net::ERR_INTERNET_DISCONNECTED),
++                       int64_t{0}));
++    return base::DoNothing();
++  }
+   auto resource_request = std::make_unique<network::ResourceRequest>();
+   resource_request->url = url;
+   resource_request->method = "GET";
+diff --git a/google_apis/gaia/gaia_auth_fetcher.cc b/google_apis/gaia/gaia_auth_fetcher.cc
+index d0d556de9c..8396b939df 100644
+--- a/google_apis/gaia/gaia_auth_fetcher.cc
++++ b/google_apis/gaia/gaia_auth_fetcher.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "google_apis/gaia/gaia_auth_fetcher.h"
++#include "base/command_line.h"
+ 
+ #include <algorithm>
+ #include <optional>
+@@ -464,6 +465,16 @@ void GaiaAuthFetcher::StartAuthCodeForOAuth2TokenExchangeWithDeviceId(
+ void GaiaAuthFetcher::StartListAccounts() {
+   DCHECK(!fetch_pending_) << "Tried to fetch two things at once!";
+ 
++  // JithuBrowser: --jithubrowser-quiet-google reports a connection failure
++  // instead of contacting accounts.google.com.
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++          "jithubrowser-quiet-google")) {
++    consumer_->OnListAccountsFailure(
++        GoogleServiceAuthError::FromConnectionError(
++            net::ERR_INTERNET_DISCONNECTED));
++    return;
++  }
++
+   net::NetworkTrafficAnnotationTag traffic_annotation =
+       net::DefineNetworkTrafficAnnotation("gaia_auth_list_accounts", R"(
+         semantics {

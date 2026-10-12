@@ -1,7 +1,7 @@
 # Maintainer: Jitheswar <jitheswaredu at gmail dot com>
 # Installs the official JithuBrowser release build (built from patched official Chromium).
 pkgname=jithubrowser-bin
-pkgver=155.0.8059.39.9
+pkgver=155.0.8059.39.10
 pkgrel=1
 pkgdesc="Privacy-focused web browser based on official Chromium"
 arch=('x86_64')
@@ -14,7 +14,7 @@ provides=('jithubrowser')
 conflicts=('jithubrowser')
 options=('!strip' '!debug')
 source=("https://github.com/Jitheswar/JithuBrowser/releases/download/v${pkgver}/jithubrowser-${pkgver}-linux-x64.tar.xz")
-sha256sums=('d596e9dff610c7d7c033fd194726bb2d5d42aee3f2a3e0cd077d361055606b91')
+sha256sums=('33306f668e3e9668974e1d8d701c68400affef2634d403ad499a46f3b970f921')
 
 package() {
   local src="$srcdir/jithubrowser-${pkgver}-linux-x64"

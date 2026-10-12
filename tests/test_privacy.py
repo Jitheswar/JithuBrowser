@@ -647,3 +647,57 @@ def test_per_site_setting_turns_protections_off_for_that_site_only(server, pw):
         rb.quit()
     assert unprotected > 2, unprotected
     assert protected <= 2, protected
+
+
+def test_webgl_readpixels_is_not_pixel_exact(page, server):
+    page.goto(f"{server}/gl")
+    r = page.evaluate("""() => {
+      const c = document.createElement('canvas'); c.width = c.height = 64;
+      const gl = c.getContext('webgl', {preserveDrawingBuffer: true});
+      if (!gl) return {nogl: true};
+      gl.clearColor(0.4, 0.5, 0.6, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+      const px = new Uint8Array(64 * 64 * 4);
+      gl.readPixels(0, 0, 64, 64, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      let first = [px[0], px[1], px[2]], off = 0;
+      for (let i = 0; i < px.length; i += 4)
+        if (px[i] !== first[0] || px[i+1] !== first[1] || px[i+2] !== first[2]) off++;
+      return {off};
+    }""")
+    if r.get("nogl"):
+        pytest.skip("WebGL not available in this environment")
+    assert r["off"] > 0, r                    # a solid clear colour reads back identically on stock Chrome
+
+
+def test_audio_analyser_output_is_not_bit_exact(page, server):
+    page.goto(f"{server}/analyser")
+    page.mouse.click(20, 20)                  # a real gesture so the AudioContext may start
+    r = page.evaluate("""async () => {
+      const ctx = new AudioContext();
+      await ctx.resume();
+      const src = ctx.createConstantSource(); src.offset.value = 1;
+      const an = ctx.createAnalyser(); src.connect(an); an.connect(ctx.destination); src.start();
+      await new Promise(r => setTimeout(r, 400));
+      const d = new Float32Array(an.fftSize); an.getFloatTimeDomainData(d);
+      let odd = 0; for (const v of d) if (v !== 0 && v !== 1) odd++;
+      await ctx.close();
+      return {odd, state: 'ok'};
+    }""")
+    assert r["odd"] > 0, r                    # stock Chrome yields only exact 0.0 and 1.0
+
+
+def test_quiet_mode_stops_background_requests_to_google(tmp_path):
+    # --jithubrowser-quiet-google: no component updates, push messaging, account or time checks.
+    _require_browser()
+    netlog = tmp_path / "net.json"
+    rb = RawBrowser(BROWSER, ["--jithubrowser-quiet-google", f"--log-net-log={netlog}"])
+    try:
+        time.sleep(45)
+    finally:
+        rb.quit()
+    text = netlog.read_text(errors="replace") if netlog.exists() else ""
+    assert text, "no net log written"
+    # Only real request URLs count (the hostnames also appear in built-in HSTS / preconnect lists).
+    bad = sorted(set(re.findall(
+        r'"url":"https?://(?:update\.googleapis\.com|android\.clients\.google\.com|clients2\.google\.com/time|'
+        r'accounts\.google\.com/ListAccounts)[^"]*', text)))
+    assert not bad, bad

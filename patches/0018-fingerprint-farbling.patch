@@ -121,7 +121,7 @@ index 89fcf5f32b..c19cc008e2 100644
        SkIRect bounds =
            snapshot->PaintImageForCurrentFrame().GetSkImageInfo().bounds();
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index b452298c24..0a4da1fff0 100644
+index b452298c24..9bac635924 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -25,6 +25,8 @@
@@ -156,6 +156,21 @@ index b452298c24..0a4da1fff0 100644
          return WebGLAny(script_state,
                          String(ContextGL()->GetString(GL_VENDOR)));
        }
+@@ -5372,6 +5383,14 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+     }
+     ContextGL()->ReadPixels(x, y, width, height, format, type, data);
+   }
++  // JithuBrowser: fingerprinting protection for rendered pixels.
++  if (jithubrowser::features::IsOn(
++          jithubrowser::features::kJithuBrowserFarbleCanvas) &&
++      format == GL_RGBA && type == GL_UNSIGNED_BYTE && data && width > 0 &&
++      height > 0) {
++    jithubrowser::features::FarblePixels(data, static_cast<size_t>(width) * 4,
++                                         width, height, false, true);
++  }
+ }
+ 
+ void WebGLRenderingContextBase::RenderbufferStorageImpl(
 diff --git a/third_party/blink/renderer/modules/webaudio/offline_audio_context.cc b/third_party/blink/renderer/modules/webaudio/offline_audio_context.cc
 index 4604be68ad..c47b4dd3a4 100644
 --- a/third_party/blink/renderer/modules/webaudio/offline_audio_context.cc
@@ -185,3 +200,68 @@ index 4604be68ad..c47b4dd3a4 100644
      // Call the offline rendering completion event listener and resolve the
      // promise too.
      DispatchEvent(*OfflineAudioCompletionEvent::Create(rendered_buffer));
+diff --git a/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc b/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc
+index 3a6e46a39f..049f2e38ad 100644
+--- a/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc
++++ b/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc
+@@ -25,6 +25,8 @@
+ 
+ #include "third_party/blink/renderer/modules/webaudio/realtime_analyser.h"
+ 
++#include "third_party/blink/public/common/jithubrowser_features.h"
++
+ #include <limits.h>
+ 
+ #include <algorithm>
+@@ -131,6 +133,12 @@ void RealtimeAnalyser::GetFloatFrequencyData(DOMFloat32Array* destination_array,
+       destination[i] = static_cast<float>(db_mag);
+     }
+   }
++  if (jithubrowser::features::IsOn(
++          jithubrowser::features::kJithuBrowserFarbleAudio) &&
++      destination_array->length() > 0) {
++    jithubrowser::features::FarbleAudioSamples(
++        destination_array->AsSpan().data(), destination_array->length());
++  }
+ }
+ 
+ void RealtimeAnalyser::GetByteFrequencyData(DOMUint8Array* destination_array,
+@@ -172,6 +180,12 @@ void RealtimeAnalyser::GetByteFrequencyData(DOMUint8Array* destination_array,
+           static_cast<unsigned char>(ClampTo(scaled_value, 0, UCHAR_MAX));
+     }
+   }
++  if (jithubrowser::features::IsOn(
++          jithubrowser::features::kJithuBrowserFarbleAudio) &&
++      destination_array->length() > 0) {
++    jithubrowser::features::FarbleBytes(destination_array->AsSpan().data(),
++                                        destination_array->length());
++  }
+ }
+ 
+ void RealtimeAnalyser::GetFloatTimeDomainData(
+@@ -198,6 +212,12 @@ void RealtimeAnalyser::GetFloatTimeDomainData(
+       destination[i] = value;
+     }
+   }
++  if (jithubrowser::features::IsOn(
++          jithubrowser::features::kJithuBrowserFarbleAudio) &&
++      destination_array->length() > 0) {
++    jithubrowser::features::FarbleAudioSamples(
++        destination_array->AsSpan().data(), destination_array->length());
++  }
+ }
+ 
+ void RealtimeAnalyser::GetByteTimeDomainData(DOMUint8Array* destination_array) {
+@@ -228,6 +248,12 @@ void RealtimeAnalyser::GetByteTimeDomainData(DOMUint8Array* destination_array) {
+           static_cast<unsigned char>(ClampTo(scaled_value, 0, UCHAR_MAX));
+     }
+   }
++  if (jithubrowser::features::IsOn(
++          jithubrowser::features::kJithuBrowserFarbleAudio) &&
++      destination_array->length() > 0) {
++    jithubrowser::features::FarbleBytes(destination_array->AsSpan().data(),
++                                        destination_array->length());
++  }
+ }
+ 
+ void RealtimeAnalyser::WriteInput(AudioBus* bus, uint32_t frames_to_process) {
