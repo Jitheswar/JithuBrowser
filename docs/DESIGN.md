@@ -11,8 +11,9 @@ These are not hidden today; the first few are the ones a determined hostile page
 * **A page can still see that a modifier key (Control/Alt/Shift) went down**, but not which shortcut it belonged to: measured with real key presses, the page sees only `Control`, not the `f`/`t`/`l` that follows, and holding a shortcut produces no auto-repeat events. Hiding the modifier itself would break Ctrl+click and games.
 * **Other APIs that only work while visible/focused** (auto Picture-in-Picture, Compute Pressure, WebAuthn, pointer lock, gamepad, sensors, lazy-loaded iframes) may still behave differently when the tab is hidden or unfocused; muted-video pausing, timers and animation frames were measured and no longer differ.
 * **`history.length` is clamped to 2**, which can confuse sites that count entries (some "return to start" and pushState-counting code).
-* Browser-initiated fullscreen exit on tab switch is still delivered to a page that was in fullscreen.
 * Installed web-app windows (`TYPE_APP`) do not get shortcut reservation (upstream gives apps all keys).
+
+**Switching tabs no longer tells a fullscreen page that you left** (`JithuBrowserSilentTabFullscreenExit`): when a page that went fullscreen at its own request (a video player, an exam page) is switched away from, the window leaves fullscreen as usual but the page is not told (no `fullscreenchange`, `document.fullscreenElement` stays set); fullscreen is restored when you return to the tab. Pressing Esc, F11 or the page's own exit still ends fullscreen and the page sees that, because that is what you asked for. If the browser cannot restore fullscreen, it tells the page the truth instead.
 
 **Find in page no longer reports your search to the page** (`JithuBrowserPrivateFindInPage`): pages can plant hidden "canary" text in `hidden=until-found` blocks or closed `<details>` and learn what you searched for from the `beforematch`/`toggle` events a match triggers (stock Chrome does this). Find now skips collapsed content, so it will not find text inside closed accordions until you open them.
 

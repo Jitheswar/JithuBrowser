@@ -12,10 +12,10 @@ index 8e635b0da3..c37d7fd29b 100644
      "fenced_frame/redacted_fenced_frame_config_mojom_traits.cc",
 diff --git a/third_party/blink/common/jithubrowser_features.cc b/third_party/blink/common/jithubrowser_features.cc
 new file mode 100644
-index 0000000000..4fceab61db
+index 0000000000..7f4992c9bd
 --- /dev/null
 +++ b/third_party/blink/common/jithubrowser_features.cc
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,29 @@
 +// Copyright 2026 The JithuBrowser Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -41,6 +41,9 @@ index 0000000000..4fceab61db
 +
 +BASE_FEATURE(kJithuBrowserPrivateFindInPage, base::FEATURE_ENABLED_BY_DEFAULT);
 +
++BASE_FEATURE(kJithuBrowserSilentTabFullscreenExit,
++             base::FEATURE_ENABLED_BY_DEFAULT);
++
 +}  // namespace jithubrowser::features
 diff --git a/third_party/blink/public/common/BUILD.gn b/third_party/blink/public/common/BUILD.gn
 index 5a5d9a64a4..60e082e35d 100644
@@ -56,10 +59,10 @@ index 5a5d9a64a4..60e082e35d 100644
      "fenced_frame/redacted_fenced_frame_config_mojom_traits.h",
 diff --git a/third_party/blink/public/common/jithubrowser_features.h b/third_party/blink/public/common/jithubrowser_features.h
 new file mode 100644
-index 0000000000..d256342dc1
+index 0000000000..5c12a998ea
 --- /dev/null
 +++ b/third_party/blink/public/common/jithubrowser_features.h
-@@ -0,0 +1,73 @@
+@@ -0,0 +1,78 @@
 +// Copyright 2026 The JithuBrowser Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -125,6 +128,11 @@ index 0000000000..d256342dc1
 +// hidden=until-found, content-visibility), so a page cannot plant hidden "canary" text and learn what
 +// the user searched for from the beforematch / toggle events that a match would trigger.
 +BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserPrivateFindInPage);
++
++// When the user switches away from a tab that is fullscreen on its own request (a video player, an exam
++// page), the window leaves fullscreen as usual but the page is not told: a page that insists on staying
++// fullscreen cannot see that the user left. Fullscreen is restored when the user returns to the tab.
++BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserSilentTabFullscreenExit);
 +
 +// Height of the browser UI (tab strip + toolbar) that the spoofed window
 +// geometry reports above the viewport.

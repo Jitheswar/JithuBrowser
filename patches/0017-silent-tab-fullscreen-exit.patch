@@ -1,0 +1,203 @@
+diff --git a/chrome/browser/ui/browser.cc b/chrome/browser/ui/browser.cc
+index 276016b98e..fff64977be 100644
+--- a/chrome/browser/ui/browser.cc
++++ b/chrome/browser/ui/browser.cc
+@@ -605,6 +605,9 @@ void Browser::OnTabStripModelChanged(TabStripModel* tab_strip_model,
+   if (selection.old_contents) {
+     OnTabDeactivated(selection.old_contents);
+   }
++  if (selection.new_contents) {
++    ExclusiveAccessManager::From(this)->OnTabActivated(selection.new_contents);
++  }
+ 
+   OnActiveTabChanged(change, selection);
+ }
+diff --git a/chrome/browser/ui/exclusive_access/exclusive_access_manager.cc b/chrome/browser/ui/exclusive_access/exclusive_access_manager.cc
+index b925b516a9..127c59655c 100644
+--- a/chrome/browser/ui/exclusive_access/exclusive_access_manager.cc
++++ b/chrome/browser/ui/exclusive_access/exclusive_access_manager.cc
+@@ -173,6 +173,10 @@ void ExclusiveAccessManager::OnTabDeactivated(WebContents* web_contents) {
+   }
+ }
+ 
++void ExclusiveAccessManager::OnTabActivated(WebContents* web_contents) {
++  fullscreen_controller_.OnTabActivated(web_contents);
++}
++
+ void ExclusiveAccessManager::OnTabDetachedFromView(WebContents* web_contents) {
+   auto weak_ptr = weak_ptr_factory_.GetWeakPtr();
+   for (auto controller : exclusive_access_controllers_) {
+diff --git a/chrome/browser/ui/exclusive_access/exclusive_access_manager.h b/chrome/browser/ui/exclusive_access/exclusive_access_manager.h
+index 03c1ff341c..2c8133cf70 100644
+--- a/chrome/browser/ui/exclusive_access/exclusive_access_manager.h
++++ b/chrome/browser/ui/exclusive_access/exclusive_access_manager.h
+@@ -82,6 +82,7 @@ class ExclusiveAccessManager {
+ 
+   // Called by Browser::TabDeactivated.
+   void OnTabDeactivated(content::WebContents* web_contents);
++  void OnTabActivated(content::WebContents* web_contents);
+ 
+   // Called by Browser::ActiveTabChanged.
+   void OnTabDetachedFromView(content::WebContents* web_contents);
+diff --git a/chrome/browser/ui/exclusive_access/fullscreen_controller.cc b/chrome/browser/ui/exclusive_access/fullscreen_controller.cc
+index 1e0d665024..56cbec38f5 100644
+--- a/chrome/browser/ui/exclusive_access/fullscreen_controller.cc
++++ b/chrome/browser/ui/exclusive_access/fullscreen_controller.cc
+@@ -39,6 +39,7 @@
+ #include "services/metrics/public/cpp/ukm_builders.h"
+ #include "services/metrics/public/cpp/ukm_recorder.h"
+ #include "third_party/blink/public/common/permissions/permission_utils.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "ui/display/display.h"
+ #include "ui/display/screen.h"
+ #include "ui/display/types/display_constants.h"
+@@ -148,6 +149,17 @@ content::FullscreenState FullscreenController::GetFullscreenState(
+     return state;
+   }
+ 
++  // JithuBrowser: the page of a tab we left silently still believes it is fullscreen.
++  if (jithu_hidden_fullscreen_tab_ &&
++      web_contents == jithu_hidden_fullscreen_tab_.get()) {
++    state.target_mode = content::FullscreenMode::kContent;
++    state.target_display_id =
++        (jithu_fullscreen_params_.display_id != display::kInvalidDisplayId)
++            ? jithu_fullscreen_params_.display_id
++            : GetDisplayId(*web_contents);
++    return state;
++  }
++
+   // Handle not fullscreen, browser fullscreen, and exiting tab fullscreen.
+   if (!tab_fullscreen_ || web_contents != exclusive_access_tab()) {
+     state.target_mode = content::FullscreenMode::kWindowed;
+@@ -225,6 +237,8 @@ void FullscreenController::EnterFullscreenModeForTab(
+   }
+   SetTabWithExclusiveAccess(web_contents);
+   requesting_origin_ = requesting_frame->GetLastCommittedOrigin();
++  jithu_requesting_frame_id_ = requesting_frame->GetGlobalId();
++  jithu_fullscreen_params_ = fullscreen_tab_params;
+ 
+   if (was_window_fullscreen_for_tab_or_pending) {
+     // While an element is in fullscreen, requesting fullscreen for a different
+@@ -273,6 +287,12 @@ void FullscreenController::EnterFullscreenModeForTab(
+ }
+ 
+ void FullscreenController::ExitFullscreenModeForTab(WebContents* web_contents) {
++  if (jithu_hidden_fullscreen_tab_ &&
++      web_contents == jithu_hidden_fullscreen_tab_.get()) {
++    // The page itself left fullscreen while its tab was in the background.
++    jithu_hidden_fullscreen_tab_.reset();
++    return;
++  }
+   if (MaybeToggleFullscreenWithinTab(web_contents, false)) {
+     // During tab capture of fullscreen-within-tab views, the browser window
+     // fullscreen state is unchanged, so return now.
+@@ -342,6 +362,48 @@ void FullscreenController::FullscreenTabOpeningPopup(
+ }
+ #endif  // !BUILDFLAG(IS_ANDROID)
+ 
++void FullscreenController::OnTabDeactivated(WebContents* web_contents) {
++  if (base::FeatureList::IsEnabled(
++          jithubrowser::features::kJithuBrowserSilentTabFullscreenExit) &&
++      web_contents == exclusive_access_tab() && tab_fullscreen_ &&
++      IsFullscreenCausedByTab() && !IsFullscreenWithinTab(web_contents) &&
++      !IsRunningInAppMode()) {
++    // A tab that is fullscreen at its own request is being switched away from. Leave window fullscreen as
++    // usual but do not tell the page; fullscreen is restored in OnTabActivated().
++    if (jithu_hidden_fullscreen_tab_ &&
++        jithu_hidden_fullscreen_tab_.get() != web_contents) {
++      // Another tab was already held this way: let it go for real.
++      jithu_hidden_fullscreen_tab_->ExitFullscreen(/*will_cause_resize=*/true);
++    }
++    jithu_hidden_fullscreen_tab_ = web_contents->GetWeakPtr();
++    jithu_silent_exit_ = true;
++    ExitFullscreenModeInternal();
++    return;
++  }
++  ExclusiveAccessControllerBase::OnTabDeactivated(web_contents);
++}
++
++void FullscreenController::OnTabActivated(WebContents* web_contents) {
++  if (!jithu_hidden_fullscreen_tab_ ||
++      web_contents != jithu_hidden_fullscreen_tab_.get()) {
++    return;
++  }
++  jithu_hidden_fullscreen_tab_.reset();
++  jithu_silent_exit_ = false;
++  if (exclusive_access_tab()) {
++    // The window had not finished leaving fullscreen yet: nothing to restore.
++    return;
++  }
++  content::RenderFrameHost* frame =
++      content::RenderFrameHost::FromID(jithu_requesting_frame_id_);
++  if (!frame || !CanEnterFullscreenModeForTab(frame)) {
++    // Cannot restore: tell the page the truth instead of leaving it in a wrong state.
++    web_contents->ExitFullscreen(/*will_cause_resize=*/true);
++    return;
++  }
++  EnterFullscreenModeForTab(frame, jithu_fullscreen_params_);
++}
++
+ void FullscreenController::OnTabDetachedFromView(WebContents* old_contents) {
+   if (!IsFullscreenWithinTab(old_contents)) {
+     return;
+@@ -373,6 +435,10 @@ void FullscreenController::OnTabDetachedFromView(WebContents* old_contents) {
+ }
+ 
+ void FullscreenController::OnTabClosing(WebContents* web_contents) {
++  if (jithu_hidden_fullscreen_tab_ &&
++      web_contents == jithu_hidden_fullscreen_tab_.get()) {
++    jithu_hidden_fullscreen_tab_.reset();
++  }
+   if (IsFullscreenWithinTab(web_contents)) {
+     web_contents->ExitFullscreen(
+         /* will_cause_resize */ IsFullscreenCausedByTab());
+@@ -532,7 +598,13 @@ void FullscreenController::NotifyTabExclusiveAccessLost() {
+     bool will_cause_resize = IsFullscreenCausedByTab();
+     state_prior_to_tab_fullscreen_ = STATE_INVALID;
+     tab_fullscreen_ = false;
+-    web_contents->ExitFullscreen(will_cause_resize);
++    const bool silent =
++        jithu_silent_exit_ && jithu_hidden_fullscreen_tab_ &&
++        web_contents == jithu_hidden_fullscreen_tab_.get();
++    jithu_silent_exit_ = false;
++    if (!silent) {
++      web_contents->ExitFullscreen(will_cause_resize);
++    }
+     exclusive_access_manager()->UpdateBubble(base::NullCallback());
+   }
+ }
+diff --git a/chrome/browser/ui/exclusive_access/fullscreen_controller.h b/chrome/browser/ui/exclusive_access/fullscreen_controller.h
+index 35b8dac847..2810ef734a 100644
+--- a/chrome/browser/ui/exclusive_access/fullscreen_controller.h
++++ b/chrome/browser/ui/exclusive_access/fullscreen_controller.h
+@@ -11,6 +11,7 @@
+ #include "base/functional/callback.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
++#include "content/public/browser/global_routing_id.h"
+ #include "base/task/cancelable_task_tracker.h"
+ #include "base/time/time.h"
+ #include "chrome/browser/ui/exclusive_access/exclusive_access_controller_base.h"
+@@ -164,6 +165,9 @@ class FullscreenController : public ExclusiveAccessControllerBase {
+   // Override from ExclusiveAccessControllerBase.
+   void OnTabDetachedFromView(content::WebContents* web_contents) override;
+   void OnTabClosing(content::WebContents* web_contents) override;
++  // JithuBrowser: leave tab fullscreen without telling the page (see kJithuBrowserSilentTabFullscreenExit).
++  void OnTabDeactivated(content::WebContents* web_contents) override;
++  void OnTabActivated(content::WebContents* web_contents);
+   bool HandleUserPressedEscape() override;
+   void HandleUserHeldEscape() override;
+   void HandleUserReleasedEscapeEarly() override;
+@@ -277,6 +281,12 @@ class FullscreenController : public ExclusiveAccessControllerBase {
+   // Set of parameters used to enter fullscreen
+   std::optional<FullscreenTabParams> fullscreen_parameters_;
+ 
++  // JithuBrowser: a tab the window silently left fullscreen for (the page still believes it is fullscreen).
++  base::WeakPtr<content::WebContents> jithu_hidden_fullscreen_tab_;
++  content::GlobalRenderFrameHostId jithu_requesting_frame_id_;
++  FullscreenTabParams jithu_fullscreen_params_;
++  bool jithu_silent_exit_ = false;
++
+ #if !BUILDFLAG(IS_ANDROID)
+   // Tracks related popups that lost activation or were shown without activation
+   // during content fullscreen sessions. This also activates the popups when

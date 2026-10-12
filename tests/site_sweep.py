@@ -46,7 +46,7 @@ UNSUPPORTED = re.compile(r"(browser (is )?(not|no longer) supported|unsupported 
                          r"switch to chrome|upgrade your browser|your browser is out of date|get chrome)", re.I)
 
 
-def run(binary):
+def run(binary, only=None):
     results = []
     profile = tempfile.mkdtemp(prefix="jithu-sweep-")
     with sync_playwright() as p:
@@ -54,12 +54,14 @@ def run(binary):
                                                    args=["--no-sandbox", "--disable-gpu"],
                                                    ignore_default_args=["--enable-automation"])
         for name, url in SITES:
+            if only and name not in only:
+                continue
             page = ctx.new_page()
             r = {"site": name, "url": url, "ok": False}
             t0 = time.time()
             try:
                 resp = page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                page.wait_for_timeout(2500)
+                page.wait_for_timeout(int(os.environ.get("JITHU_SWEEP_SETTLE_MS", "2500")))
                 r["status"] = resp.status if resp else None
                 r["final_url"] = page.url[:90]
                 r["title"] = (page.title() or "")[:60]
@@ -82,7 +84,8 @@ def run(binary):
 
 if __name__ == "__main__":
     binary = os.environ.get("JITHU_BROWSER") or sys.exit("set JITHU_BROWSER")
-    res = run(binary)
+    only = sys.argv[sys.argv.index("--only") + 1].split(",") if "--only" in sys.argv else None
+    res = run(binary, only)
     ok = sum(r["ok"] for r in res)
     bad = sum(bool(r.get("unsupported_notice")) for r in res)
     print(f"\n{ok}/{len(res)} loaded; {bad} showed an unsupported-browser notice")

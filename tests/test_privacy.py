@@ -402,6 +402,48 @@ def test_hidden_tab_is_not_visible_to_embedded_frames(raw):
     assert r == {"log": [], "hidden": False, "state": "visible"}, r
 
 
+@needs_display
+def test_tab_switch_while_page_is_fullscreen_is_not_reported(raw):
+    """A page that is fullscreen (e.g. a video player) learns the user left the tab if the browser exits fullscreen."""
+    raw.spy_tab.ev("window.__fs = []; document.addEventListener('fullscreenchange', () => __fs.push(document.fullscreenElement ? 'enter' : 'exit'));")
+    raw.spy_tab.call("Runtime.evaluate", expression="document.documentElement.requestFullscreen().then(() => 'ok', e => String(e))", userGesture=True, awaitPromise=True)
+    time.sleep(2)
+    entered = raw.spy_tab.ev("!!document.fullscreenElement")
+    raw.open("about:blank", spy=False)               # user switches to another tab
+    time.sleep(3)
+    r = raw.spy_tab.ev("({fs: __fs.slice(), element: !!document.fullscreenElement})")
+    raw.activate(raw.spy_tab)
+    assert entered, "the page could not enter fullscreen in this environment"
+    assert "exit" not in r["fs"] and r["element"], r
+
+
+@needs_display
+def test_silent_fullscreen_exit_keeps_the_window_usable(raw):
+    """The window must really leave fullscreen while the user is on another tab, restore it when they come back,
+    and Esc must still exit (the page is told about a real, user-requested exit)."""
+    raw.spy_tab.ev("window.__fs = []; document.addEventListener('fullscreenchange', () => __fs.push(document.fullscreenElement ? 'enter' : 'exit'));")
+    raw.spy_tab.call("Runtime.evaluate", expression="document.documentElement.requestFullscreen().then(() => 'ok', e => String(e))", userGesture=True, awaitPromise=True)
+    time.sleep(2)
+    state = lambda: raw.browser.call("Browser.getWindowForTarget", targetId=raw.spy_tab.id)["bounds"]["windowState"]
+    assert state() == "fullscreen"
+    other = raw.open("about:blank", spy=False)
+    time.sleep(3)
+    away = state()                                    # user is looking at another tab
+    raw.activate(raw.spy_tab)
+    time.sleep(3)
+    back = state()
+    page_events = raw.spy_tab.ev("__fs.slice()")
+    still_fullscreen = raw.spy_tab.ev("!!document.fullscreenElement")
+    raw.focus_os_window()
+    subprocess.run(["xdotool", "key", "Escape"], check=False)
+    time.sleep(2)
+    after_esc = raw.spy_tab.ev("({fs: __fs.slice(), element: !!document.fullscreenElement})")
+    assert away != "fullscreen", f"window stayed fullscreen on the other tab: {away}"
+    assert back == "fullscreen" and still_fullscreen, (back, still_fullscreen)
+    assert page_events == ["enter"], page_events
+    assert after_esc["element"] is False and after_esc["fs"][-1] == "exit", after_esc
+
+
 # --------------------------------------------------------------------------------
 # Playwright tests (independent of window state)
 # --------------------------------------------------------------------------------
