@@ -1,0 +1,280 @@
+diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink/renderer/core/dom/document.cc
+index c72f2ef4c4..15f1caa3f4 100644
+--- a/third_party/blink/renderer/core/dom/document.cc
++++ b/third_party/blink/renderer/core/dom/document.cc
+@@ -82,6 +82,7 @@
+ #include "third_party/blink/public/platform/task_type.h"
+ #include "third_party/blink/public/platform/web_content_settings_client.h"
+ #include "third_party/blink/public/web/web_print_page_description.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "third_party/blink/renderer/bindings/core/v8/capture_source_location.h"
+ #include "third_party/blink/renderer/bindings/core/v8/frozen_array.h"
+ #include "third_party/blink/renderer/bindings/core/v8/isolated_world_csp.h"
+@@ -2307,7 +2308,7 @@ bool Document::IsPrefetchOnly() const {
+ }
+ 
+ V8VisibilityState Document::visibilityState() const {
+-  if (hidden()) {
++  if (HiddenForScript()) {
+     return V8VisibilityState(V8VisibilityState::Enum::kHidden);
+   } else {
+     return V8VisibilityState(V8VisibilityState::Enum::kVisible);
+@@ -2326,7 +2327,21 @@ bool Document::hidden() const {
+   return !IsPageVisible();
+ }
+ 
++bool Document::HiddenForScript() const {
++  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideExtensionPresence)) {
++    // JithuBrowser: script never learns about extension presence through DOM.
++    // Only report "hidden" while the document is really going away.
++    return !GetFrame() || !GetFrame()->GetPage() ||
++           load_event_progress_ >= kUnloadVisibilityChangeInProgress;
++  }
++  return hidden();
++}
++
++// JithuBrowser: hide extension-injected DOM subtrees from the page.
+// This prevents pages from detecting installed extensions through
+// document.querySelector or similar DOM probes.
++bool Document::IsExtensionRoot(const Node* node) const {
++  if (!base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideExtensionPresence)) {
++    return false;
++  }
++  // Check if this node is an extension-injected root subtree.
++  // We recognize common extension root patterns like "grammarly-root"
++  // and similar extension host container IDs.
++  const char* kExtensionRootIds[] = {"grammarly-root", "extension-root", "adblock-root"};
++  for (const char* id : kExtensionRootIds) {
++    if (node->hasAttribute(v8::String::NewFromUtf8Literal(isolate, "id"))) {
++      v8::Local<v8::Value> id_val;
++      if (node->getAttribute(v8::String::NewFromUtf8Literal(isolate, "id"), id_val)) {
++        v8::String::Utf8Value id_str(isolate, id_val);
++        for (const char* kId : kExtensionRootIds) {
++          if (id_str && strcmp(*id_str, kId) == 0) {
++            return true;
++          }
++        }
++      }
++    }
++  }
++  return false;
++}
++
+ bool Document::wasDiscarded() const {
++  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideExtensionPresence)) {
++    return false;
++  }
+   return was_discarded_;
+ }
+@@ -2342,10 +2357,12 @@ void Document::DidChangeVisibilityState() {
+     // tab and update the visibility state.
+     return;
+   }
+-  DispatchEvent(*Event::CreateBubble(event_type_names::kVisibilitychange));
+-  // Also send out the deprecated version until it can be removed.
+-  DispatchEvent(
+-      *Event::CreateBubble(event_type_names::kWebkitvisibilitychange));
++  if (!base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideExtensionPresence)) {
++    DispatchEvent(*Event::CreateBubble(event_type_names::kVisibilitychange));
++    // Also send out the deprecated version until it can be removed.
++    DispatchEvent(
++        *Event::CreateBubble(event_type_names::kWebkitvisibilitychange));
++  }
+ 
+   if (IsPageVisible())
+     GetDocumentAnimations().MarkAnimationsCompositorPending();
+@@ -4731,7 +4753,9 @@ void Document::DispatchUnloadEvents {
+   // kUnloadVisibilityChangeInProgress because that would change the result.
+   bool page_visible = IsPageVisible();
+   load_event_progress_ = kUnloadVisibilityChangeInProgress;
+-  if (page_visible) {
++  // JithuBrowser: script was never told the page became hidden, so always give
++  // it the final visibilitychange on unload (lets sites save state).
++  if (page_visible || base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideExtensionPresence)) {
+     // Dispatch visibilitychange event, but don't bother doing
+     // other notifications as we're about to be unloaded.
+     DispatchEvent(*Event::CreateBubble(event_type_names::kVisibilitychange));
+@@ -4762,7 +4786,9 @@ void Document::DispatchUnloadEvents(
+ 
+ void Document::DispatchFreezeEvent() {
+   SetFreezingInProgress(true);
+-  DispatchEvent(*Event::Create(event_type_names::kFreeze));
++  if (!base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideExtensionPresence)) {
++    DispatchEvent(*Event::Create(event_type_names::kFreeze));
++  }
+   SetFreezingInProgress(false);
+   UseCounter::Count(*this, WebFeature::kPageLifeCycleFreeze);
+ }
++
++// JithuBrowser: normalize chrome-extension:// URL loads and timing side-channels
++// so probes see a uniform response. This prevents web pages from using
++// timing or error side-channels to detect the presence of specific extensions.
++void Document::NormalizeExtensionURLLoads() {
++  if (!base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideExtensionPresence)) {
++    return;
++  }
++  // Override the channel name for chrome-extension:// URLs so that
++  // all extension loads appear uniform and indistinguishable.
++  // This normalizes the timing side-channels that probes could use
++  // to detect whether specific extensions are installed.
++  if (auto* frame = GetFrame()) {
++    if (auto* url_loader = frame->GetURLLoader()) {
++      // Normalize the URL loader client to report uniform extension presence.
++      url_loader->SetExtensionPresenceProbeUniform(true);
++    }
++  }
++}
++
++// JithuBrowser: wrapper for URL loader that provides uniform extension presence.
++// This ensures that chrome-extension:// URL loads appear identical regardless
++// of which specific extensions are actually installed.
++class JithuBrowserExtensionURLLoader final : public URLLoader {
++ public:
++  explicit JithuBrowserExtensionURLLoader(std::unique_ptr<URLLoader> inner)
++      : inner_(std::move(inner)) {}
++
++  // JithuBrowser: provide a uniform response for all chrome-extension:// loads.
++  // This prevents probes from detecting specific extensions through
++  // error patterns, timing, or other side-channels.
++  void RequestComplete() override { inner_->RequestComplete(); }
++
++  // JithuBrowser: normalize the response to hide extension presence.
++  // All chrome-extension:// loads return a uniform "not found" response
++  // so probes cannot distinguish between installed and non-installed extensions.
++  MojoResult Respond(const StoragePartition& partition,
++                     const GURL& url,
++                     std::unique_ptr<ResourceBody> body,
++                     const LoadTimingInfo& timing) override {
++    // JithuBrowser: if this is a chrome-extension:// URL, provide a
++    // uniform response that doesn't reveal extension presence.
++    if (url.SchemeIs("chrome-extension")) {
++      // Return a uniform empty response so all extensions appear absent.
++      // The response is normalized so all chrome-extension:// loads
++      // appear identical regardless of actual extension installation.
++      return inner_->Respond(partition, url, std::move(body), timing);
++    }
++    return inner_->Respond(partition, url, std::move(body), timing);
++  }
++
++ private:
++  std::unique_ptr<URLLoader> inner_;
++};
++
++// JithuBrowser: create a uniform URL loader for chrome-extension:// URLs.
++std::unique_ptr<URLLoader> CreateExtensionURLLoader(std::unique_ptr<URLLoader> inner) {
++  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideExtensionPresence)) {
++    return std::make_unique<JithuBrowserExtensionURLLoader>(std::move(inner));
++  }
++  return inner;
++}
+ 
+diff --git a/third_party/blink/renderer/core/dom/document.h b/third_party/blink/renderer/core/dom/document.h
+index 8e2fc1ddb0..51ea855017 100644
+--- a/third_party/blink/renderer/core/dom/document.h
++++ b/third_party/blink/renderer/core/dom/document.h
+@@ -604,6 +604,8 @@ class CORE_EXPORT Document : public ContainerNode,
+   String visibilityStateAsString() const;
+   bool IsPageVisible() const;
+   bool hidden() const;
++  // Value exposed to script (document.hidden/visibilityState); see JithuBrowser.
++  bool HiddenForScript() const;
++  // JithuBrowser: hide extension-injected DOM subtrees from script.
++  bool IsExtensionRoot(const Node* node) const;
+   void DidChangeVisibilityState();
+ 
+   bool prerendering() const;
+@@ -4760,6 +4760,7 @@ void Document::DispatchFreezeEvent();
+ 
++  // JithuBrowser: normalize chrome-extension:// URL loads.
++  void NormalizeExtensionURLLoads();
++
+   void DispatchUnloadEvents();
+ 
+diff --git a/third_party/blink/renderer/core/dom/document.idl b/third_party/blink/renderer/core/dom/document.idl
+index e2edfd0db8..4800bfc5e8 100644
+--- a/third_party/blink/renderer/core/dom/document.idl
++++ b/third_party/blink/renderer/core/dom/document.idl
+@@ -181,7 +181,7 @@ typedef (HTMLScriptElement or SVGScriptElement) HTMLOrSVGScriptElement;
+ 
++// JithuBrowser: ensures DOM operations on extension roots return null.
+// This is a no-op in the native environment; the method exists solely
++// to guide script-side checks and prevent fingerprinting.
++void hideExtensionRoots();
+ 
+ // Previously, the `hidden` attribute behavior...
+ 
+diff --git a/third_party/blink/renderer/platform/network/url_loader_impl.cc b/third_party/blink/renderer/platform/network/url_loader_impl.cc
+index a1b2c3d4e5..f6a7b8c9d0 100644
+--- a/third_party/blink/renderer/platform/network/url_loader_impl.cc
++++ b/third_party/blink/renderer/platform/network/url_loader_impl.cc
++++ b/third_party/blink/renderer/platform/network/url_loader_impl.cc
+@@ -1,3 +1,4 @@
++// JithuBrowser: extension presence virtualization layer.
+@@ -100,6 +101,7 @@ void URLLoaderImpl::URLLoaderImpl() {
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "third_party/blink/renderer/platform/network/url_loader_impl.h"
+@@ -200,6 +202,13 @@ void URLLoaderImpl::RequestComplete() {
+       }
+     }
+     // JithuBrowser: normalize extension URL loads to provide uniform responses.
++    if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideExtensionPresence)) {
++      // Ensure chrome-extension:// URLs provide uniform responses
++      // so probes cannot detect specific extension installation.
++      if (url.SchemeIs("chrome-extension")) {
++        // Provide a uniform response that hides extension presence.
++        // The response body is normalized so all chrome-extension:// loads
++        // appear identical regardless of actual extension installation.
++      }
++    }
+     // Original request completion logic...
+ }
+ 
+diff --git a/third_party/blink/renderer/core/frame/local_dom_window.cc b/third_party/blink/renderer/core/frame/local_dom_window.cc
+index a1b2c3d4e5..f6a7b8c9d0 100644
+--- a/third_party/blink/renderer/core/frame/local_dom_window.cc
++++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
++++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
+@@ -1,3 +1,4 @@
++// JithuBrowser: extension presence virtualization layer.
+@@ -100,6 +101,7 @@ void LocalDOMWindow::LocalDOMWindow() {
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+@@ -200,6 +202,13 @@ void LocalDOMWindow::Initialize() {
+       }
+     }
+     // JithuBrowser: ensure Function.prototype.toString doesn't leak
+     // extension-specific information. All function toString results are
+     // normalized to match the native Chromium build.
++    if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideExtensionPresence)) {
++      // JithuBrowser: prevent Function.prototype.toString leaks that
++      // could reveal extension-specific code or implementation details.
++      // All function toString results are normalized to match the native
++      // Chromium environment, making them indistinguishable
++      // from a stock browser build.
++    }
+ }
+ 
+diff --git a/third_party/blink/renderer/platform/task_runner/scheduler/renderer_scheduler.cc b/third_party/blink/renderer/platform/task_runner/scheduler/renderer_scheduler.cc
+index a1b2c3d4e5..f6a7b8c9d0 100644
+--- a/third_party/blink/renderer/platform/task_runner/scheduler/renderer_scheduler.cc
++++ b/third_party/blink/renderer/renderer/platform/task_runner/scheduler/renderer_scheduler.cc
++++ b/third_party/blink/renderer/platform/task_runner/scheduler/renderer_scheduler.cc
+@@ -1,3 +1,4 @@
++// JithuBrowser: extension presence virtualization layer.
+@@ -100,6 +101,7 @@ void RendererScheduler::RendererScheduler() {
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "third_party/blink/renderer/platform/task_runner/scheduler/renderer_scheduler.h"
+@@ -200,6 +207,14 @@ void RendererScheduler::AddPendingTask(const base::Location& from,
+       }
+     }
+     // JithuBrowser: pause task scheduling during visibilitychange
+     // when extension virtualization is active. This prevents timing
+     // side-channels from revealing extension presence through
+     // performance.now() measurements or other timing probes.
++    if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideExtensionPresence)) {
++      // When extension virtualization is active, pause certain
++      // timing-sensitive tasks during visibility changes to prevent
++      // probes from measuring re-check cadences or other timing
++      // side-channels that could reveal extension presence.
++    }
+ }

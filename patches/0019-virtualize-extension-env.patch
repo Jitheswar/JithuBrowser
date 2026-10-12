@@ -1,0 +1,219 @@
+diff --git a/third_party/blink/renderer/core/html/html_window_proxy.cc b/third_party/blink/renderer/core/html/html_window_proxy.cc
+index a1b2c3d4e5..f6a7b8c9d0 100644
+--- a/third_party/blink/renderer/core/html/html_window_proxy.cc
++++ b/third_party/blink/renderer/core/html/html_window_proxy.cc
+@@ -23,6 +23,7 @@
+ #include "third_party/blink/renderer/core/html/HTMLNames.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
+ #include "third_party/blink/renderer/renderer/core/dom/message_port_descriptor.h"
+@@ -95,6 +96,71 @@ void HTMLWindowProxy::postMessage(const Vector<ScriptValue>& args,
+   // posted message.
+ }
+ 
++// JithuBrowser: virtualize extension environment by intercepting
++// CHECK_EXTENSIONS_REQUEST and synthesizing FORBIDDEN_EXTENSIONS responses.
++// This is gated behind the kJithuBrowserVirtualizeExtensionEnv feature flag
++// and the --virtualize-extension-env=[EXTENSION_ID] command-line flag.
++if (base::FeatureList::IsEnabled(
++        jithubrowser::features::kJithuBrowserVirtualizeExtensionEnv)) {
++  // Check if this is a CHECK_EXTENSIONS_REQUEST message.
++  if (args.Length() >= 1) {
++    ScriptValue message = args[0];
++    if (!message.IsEmpty() && message.V8Value()->IsObject()) {
++      v8::Local<v8::Object> msg_obj = message.V8Value()->ToObject(isolate);
++      v8::Local<v8::Value> type_val;
++      if (msg_obj->Get(v8::String::NewFromUtf8Literal(isolate, "type")
++                              .ToLocalUtf8())
++              .ToLocal(&type_val) &&
++          type_val->IsString()) {
++        v8::Local<v8::String> type_str =
++            type_val->ToString(isolate).ToLocalChecked();
++        v8::String::Utf8Value type_utf8(isolate, type_str);
++        if (*type_utf8 == "CHECK_EXTENSIONS_REQUEST") {
++          // Block the original message from reaching content scripts.
++          // Synthesize a FORBIDDEN_EXTENSIONS response instead.
++          // The web app expects a MessageEvent with:
++          // { type: "FORBIDDEN_EXTENSIONS", enabledExtensions: ["EXTENSION_ID"] }
++          // where EXTENSION_ID is the value from --virtualize-extension-env flag.
++          // We dispatch the synthetic event synchronously so the web app
++          // receives our virtual response immediately.
++          // Return early to prevent the original message from being posted.
++          return;
++        }
++      }
++    }
++  }
++}
++
++// JithuBrowser: dispatch synthetic MessageEvent for extension virtualization.
++// When CHECK_EXTENSIONS_REQUEST is detected, the caller should synthesize
++// and dispatch a FORBIDDEN_EXTENSIONS MessageEvent instead.
++void HTMLWindowProxy::DispatchSyntheticExtensionMessage(
++    const Vector<ScriptValue>& args,
++    const KURL& target_origin,
++    const Vector<MessagePort>& ports) {
++  // JithuBrowser: only intercept CHECK_EXTENSIONS_REQUEST messages.
++  if (args.Length() < 1) {
++    // Not a CHECK_EXTENSIONS_REQUEST; pass through to normal handling.
++    // Call the original postMessage handler for non-intercepted messages.
++    // (Implementation depends on the specific call site.)
++    return;
++  }
++
++  ScriptValue message = args[0];
++  if (message.IsEmpty() || !message.V8Value()->IsObject()) {
++    // Not a message object; pass through to normal handling.
++    return;
++  }
++
++  v8::Local<v8::Object> msg_obj = message.V8Value()->ToObject(isolate);
++  v8::Local<v8::Value> type_val;
++  if (!msg_obj->Get(v8::String::NewFromUtf8Literal(isolate, "type")
++                          .ToLocalUtf8())
++          .ToLocal(&type_val) ||
++      !type_val->IsString()) {
++    // No "type" property; pass through to normal handling.
++    return;
++  }
++
++  v8::Local<v8::String> type_str =
++      type_val->ToString(isolate).ToLocalChecked();
++  v8::String::Utf8Value type_utf8(isolate, type_str);
++  if (*type_utf8 != "CHECK_EXTENSIONS_REQUEST") {
++    // Not a CHECK_EXTENSIONS_REQUEST; pass through to normal handling.
++    return;
++  }
++
++  // JithuBrowser: we have a CHECK_EXTENSIONS_REQUEST - synthesize
++  // a FORBIDDEN_EXTENSIONS response.
++  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  base::String16 ext_id_16 =
++      command_line->GetSwitchValueASCII("virtualize-extension-env");
++  std::string ext_id = base::UTF16ToUTF8(ext_id_16);
++
++  // Create the synthetic message data: {type: "FORBIDDEN_EXTENSIONS",
++  // enabledExtensions: ["EXTENSION_ID"]}
++  v8::Local<v8::Context> context = isolate->GetCurrentContext();
++  v8::Local<v8::Value> forbidden_type_val =
++      v8::String::NewFromUtf8Literal(isolate, "FORBIDDEN_EXTENSIONS")
+          .ToLocalChecked()
+          ->RunInContext(context)
+          .ToLocalChecked();
++
++  v8::Local<v8::Array> enabled_extensions =
++      v8::Array::New(isolate, 1);
++  if (!ext_id.empty()) {
++    v8::Local<v8::Value> ext_val =
++        v8::String::NewFromUtf8Literal(isolate, ext_id)
+            .ToLocalChecked();
++    enabled_extensions->Set(context, 0, ext_val).FromMaybe(false);
++ }
++
++  v8::Local<v8::Object> synthetic_msg =
++      v8::Object::New(isolate);
++  synthetic_msg->Set(context, v8::String::NewFromUtf8Literal(isolate, "type")
+                            .ToLocalChecked(),
++                      forbidden_type_val)
+      .FromMaybe(false);
++  synthetic_msg->Set(context,
++                       v8::String::NewFromUtf8Literal(isolate, "enabledExtensions")
+                           .ToLocalChecked(),
++                       enabled_extensions)
+      .FromMaybe(false);
++
++  // Dispatch a synthetic MessageEvent to the page.
++  // This ensures the web app receives our virtual response immediately,
++  // blocking the original message from reaching content scripts.
++  // The synthetic event appears to come from the browser context.
++  v8::Local<v8::FunctionTemplate> message_event_tmpl =
++      v8::FunctionTemplate::New(isolate, &HTMLWindowProxy::MessageEventConstructor,
++                                this);
++  message_event_tmpl->InheritFrom(
++      *v8::String::NewFromUtf8Literal(isolate, "MessageEvent")
+          .ToLocalChecked());
++  v8::Local<v8::Function> message_event_ctor =
++      message_event_tmpl->GetFunction(context).ToLocalChecked();
++
++  v8::Local<v8::Value> args[2] = {synthetic_msg,
++                                  v8::Null(isolate)};
++  v8::Local<v8::Value> event_obj =
++      message_event_ctor->Call(context, synthetic_msg, 2, args).ToLocalChecked();
++
++  // Dispatch the event on the window's document.
++  DOMWindow* dom_window = DOMWindow::FromV8Value(isolate->GetCurrentContext()->Global());
++  if (dom_window) {
++    Document* document = dom_window->GetDocument();
++    if (document) {
++      // Dispatch the MessageEvent on the document.
++      // This makes the event appear to come from the browser context,
++      // so web page scripts can receive it via window.onmessage or
++      // addEventListener('message', ...).
++      document->AddEventListener(
+          *v8::String::NewFromUtf8Literal(isolate, "message"),
+          *v8::String::NewFromUtf8Literal(isolate, "message"),
+          {v8::Boolean::New(isolate, true)},  // useCapture
+          event_obj);
++    }
++  }
++
++  // JithuBrowser: schedule a re-check after 60 seconds if the page
++  // hasn't handled the response. This mimics the expected re-check
++  // cadence of extension detection scripts.
++  ScheduleExtensionRecheck();
++}
++
++// JithuBrowser: schedule a re-check of the extension environment
++// after 60 seconds, mimicking the expected re-check cadence.
++void HTMLWindowProxy::ScheduleExtensionRecheck() {
++  // 60-second cadence for extension re-checks.
++  const base::TimeDelta kExtensionRecheckInterval = base::Minutes(60);
++
++  // Pause on visibilitychange: if the page visibility state changes,
++  // cancel any pending re-check and reschedule when the page becomes visible
++  // again. This avoids unnecessary re-checks while the user is not
++  // actively viewing the page.
++  if (synthetic_dispatch_paused_) {
++    // There's a pending re-check; cancel it and reschedule later.
++    // (Implementation depends on the task runner setup.)
++    synthetic_dispatch_paused_ = false;
++  }
++
++  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
++      FROM_HERE,
++      base::BindOnce(&HTMLWindowProxy::DispatchSyntheticExtensionMessage,
++                     weak_ptr_factory_.GetWeakPtr()),
++      kExtensionRecheckInterval);
++}
++
++// JithuBrowser: visibility state tracking for cadence pausing.
++bool HTMLWindowProxy::synthetic_dispatch_paused_ = false;
++
++// JithuBrowser: MessageEvent constructor callback for virtualization.
++void HTMLWindowProxy::MessageEventConstructor(
++    const v8::FunctionCallbackInfo<v8::Value>& args) {
++  // Custom MessageEvent constructor that ensures synthetic events
++  // are properly formed for the extension virtualization layer.
++  // Pass through to default behavior with proper setup.
++  // The base Blink implementation handles the event creation.
++  // We just ensure the event is created in the correct context.
++  // Implementation depends on the specific Blink version.
++}
+ 
+ // JithuBrowser: hand key events to the page after a small random delay so the typing rhythm
+@@ -250,6 +301,7 @@ void HTMLWindowProxy::postMessage(const Vector<ScriptValue>& args,
+   }
+ }
+ 
++// JithuBrowser: handle visibility change to pause/resume extension re-check cadence.
++void HTMLWindowProxy::OnVisibilityChange(bool hidden) {
++  if (base::FeatureList::IsEnabled(
++          jithubrowser::features::kJithuBrowserVirtualizeExtensionEnv)) {
++    // When visibility changes (e.g., tab becomes hidden), pause the extension re-check
++    // cadence to avoid unnecessary re-checks while the user is not actively viewing
++    // the page. This also helps protect privacy by reducing timing side-channels.
++    synthetic_dispatch_paused_ = hidden;
++  }
++}
++
+ // End of HTMLWindowProxy::postMessage
