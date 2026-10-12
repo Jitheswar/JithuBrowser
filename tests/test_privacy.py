@@ -582,3 +582,39 @@ def test_navigation_api_does_not_reveal_history_depth(page, server):
     r = page.evaluate("({n: navigation.entries().length, idx: navigation.currentEntry.index, canBack: navigation.canGoBack})")
     assert r["n"] <= 2 and r["idx"] <= 1, r
     assert r["canBack"] is True, r          # whether there is anything to go back to is still available
+
+
+def test_canvas_readback_is_not_a_pixel_exact_fingerprint(page, server):
+    page.goto(f"{server}/canvas")
+    r = page.evaluate("""() => {
+      const c = document.createElement('canvas'); c.width = c.height = 100;
+      const g = c.getContext('2d'); g.fillStyle = 'rgb(100,150,200)'; g.fillRect(0, 0, 100, 100);
+      const d = g.getImageData(0, 0, 100, 100).data;
+      let off = 0; for (let i = 0; i < d.length; i += 4)
+        if (d[i] !== 100 || d[i+1] !== 150 || d[i+2] !== 200 || d[i+3] !== 255) off++;
+      return {off, png: c.toDataURL().length};
+    }""")
+    assert r["off"] > 0, r                    # stock Chrome: a solid fill reads back exactly
+    assert r["png"] > 2000, r                 # a solid PNG is tiny unless pixels were perturbed
+
+
+def test_canvas_blob_is_perturbed_too(page, server):
+    page.goto(f"{server}/canvas")
+    n = page.evaluate("""async () => {
+      const c = document.createElement('canvas'); c.width = c.height = 100;
+      const g = c.getContext('2d'); g.fillStyle = 'rgb(100,150,200)'; g.fillRect(0, 0, 100, 100);
+      return (await new Promise(r => c.toBlob(r, 'image/png'))).size;
+    }""")
+    assert n > 2000, n
+
+
+def test_offline_audio_render_is_not_bit_exact(page, server):
+    page.goto(f"{server}/audio")
+    off = page.evaluate("""async () => {
+      const ctx = new OfflineAudioContext(1, 4410, 44100);
+      const s = ctx.createConstantSource(); s.offset.value = 1; s.connect(ctx.destination); s.start();
+      const d = (await ctx.startRendering()).getChannelData(0);
+      let n = 0; for (const v of d) if (v !== 1) n++;
+      return n;
+    }""")
+    assert off > 0                            # stock Chrome renders exactly 1.0 everywhere
