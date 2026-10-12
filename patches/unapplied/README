@@ -1,0 +1,2 @@
+Patches here are NOT in patches/series. Both are corrupt (git apply --check fails: 0018 line 37, 0019 line 10) and cannot be applied as written.
+0019 fakes extension answers to sites, which JithuBrowser does not implement.
