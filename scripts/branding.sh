@@ -22,4 +22,5 @@ for s in 16 24 48 64 128 256; do
   [ -f "$T/linux/product_logo_$s.png" ] && cp "$ICONS/product_logo_$s.png" "$T/linux/product_logo_$s.png"
 done
 cp "$ICONS/jithubrowser.ico" "$T/win/chromium.ico"
+python3 "$JB_ROOT/scripts/rebrand-strings.py" "$JB_SRC"
 echo "branding applied"
