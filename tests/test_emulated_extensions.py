@@ -263,7 +263,9 @@ def test_management_list_is_pure():
             if mgmt:
                 break
             time.sleep(0.3)
-        assert mgmt and not mgmt.get("error"), mgmt
+        assert mgmt is not None, "probe page never reported"
+        if isinstance(mgmt, dict):
+            raise AssertionError("management API error: " + str(mgmt.get("error")))
         ids = [e["id"] for e in mgmt]
         assert PROBE_EXT_ID in ids, mgmt                # API works, user ext visible
         assert EMULATOR_EXT_ID not in ids, mgmt         # emulator is a component ext
