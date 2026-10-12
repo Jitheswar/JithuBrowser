@@ -62,6 +62,7 @@ SPY = """
 """
 
 PAGE = b"<!doctype html><title>t</title><input id=i autofocus><p>spy page</p>"
+SW_SCRIPT = b"self.addEventListener('message', async e => { const cs = await clients.matchAll({includeUncontrolled: true}); e.source.postMessage(JSON.stringify(cs.map(c => ({vis: c.visibilityState, focused: c.focused})))); });"
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -72,6 +73,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         Handler.headers_seen.append(dict(self.headers))
+        if self.path.endswith("/sw.js"):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/javascript")
+            self.end_headers()
+            self.wfile.write(SW_SCRIPT)
+            return
         self.send_response(200)
         self.send_header("Content-Type", "text/html")
         self.send_header("Accept-CH", ", ".join(HIGH_ENTROPY_CH))
@@ -368,6 +375,31 @@ def test_hidden_tab_does_not_pause_video(raw):
     r = raw.spy_tab.ev("({paused: document.getElementById('v').paused, ev: __ev.slice()})")
     raw.activate(raw.spy_tab)
     assert r == {"paused": False, "ev": []}, r
+
+
+@needs_display
+def test_service_worker_clients_do_not_report_hidden_tab(raw):
+    """clients.matchAll() reports each window's visibilityState/focused: stock Chrome says hidden/false for a background tab."""
+    raw.spy_tab.ev("navigator.serviceWorker.register('/sw.js').then(() => navigator.serviceWorker.ready).then(() => 'ready')")
+    raw.open("about:blank", spy=False)               # the spy tab is now hidden
+    time.sleep(3)
+    clients = raw.spy_tab.ev("""new Promise(res => { navigator.serviceWorker.addEventListener('message', e => res(JSON.parse(e.data)), {once: true});
+        navigator.serviceWorker.ready.then(r => r.active.postMessage('q')); setTimeout(() => res('timeout'), 5000); })""")
+    raw.activate(raw.spy_tab)
+    assert clients != "timeout" and clients, clients
+    assert all(c["vis"] == "visible" and c["focused"] for c in clients), clients
+
+
+@needs_display
+def test_hidden_tab_is_not_visible_to_embedded_frames(raw):
+    """A frame embedded in the page must not see visibilitychange / hidden either."""
+    raw.spy_tab.ev("""document.body.innerHTML = '<iframe id=f srcdoc="<script>window.log=[];document.addEventListener(\\'visibilitychange\\',()=>log.push(document.visibilityState))</script>"></iframe>'""")
+    time.sleep(1)
+    raw.open("about:blank", spy=False)
+    time.sleep(3)
+    r = raw.spy_tab.ev("(() => { const w = document.getElementById('f').contentWindow; return {log: w.log, hidden: w.document.hidden, state: w.document.visibilityState}; })()")
+    raw.activate(raw.spy_tab)
+    assert r == {"log": [], "hidden": False, "state": "visible"}, r
 
 
 # --------------------------------------------------------------------------------

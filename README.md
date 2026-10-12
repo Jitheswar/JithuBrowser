@@ -2,7 +2,7 @@
 
 **A privacy-focused browser built on official Chromium.** Websites keep working, including Chrome-only ones, and Chrome Web Store extensions install normally. Pages just can't watch what you do.
 
-> Status: **pre-release available** ([download](https://github.com/Jitheswar/JithuBrowser/releases)) for Linux x86_64 and Windows x64. All protections pass the 24-test privacy suite on Linux and on the Windows build under Wine (stock Chrome fails 20 of the 24 on Linux and 19 on Windows). Real installs were verified on Ubuntu 22.04 (`.deb`), Fedora 44, Rocky Linux 9.8 and openSUSE Tumbleweed (`.rpm`), and Arch Linux (`makepkg` + `pacman`). The **Windows installer is cross-compiled and has not been run on real Windows.**
+> Status: **pre-release available** ([download](https://github.com/Jitheswar/JithuBrowser/releases)) for Linux x86_64 and Windows x64. All protections pass the 26-test privacy suite on Linux and on the Windows build under Wine (stock Chrome fails 21 of the 26 on Linux and 20 on Windows). Real installs were verified on Ubuntu 22.04 (`.deb`), Fedora 44, Rocky Linux 9.8 and openSUSE Tumbleweed (`.rpm`), and Arch Linux (`makepkg` + `pacman`). The **Windows installer is cross-compiled and has not been run on real Windows.**
 
 ## What JithuBrowser hides from websites
 
@@ -172,7 +172,7 @@ Windows: `scripts\windows\build.ps1` then `scripts\windows\package.ps1` (portabl
 
 ## Testing
 
-- `tests/run-tests.sh /path/to/browser`: the 24-test privacy suite (pytest) on a virtual display with a window manager, so tab switches and minimising are real. Run it against stock Chrome as a control: the leak tests fail there and pass on JithuBrowser.
+- `tests/run-tests.sh /path/to/browser`: the 26-test privacy suite (pytest) on a virtual display with a window manager, so tab switches and minimising are real. Run it against stock Chrome as a control: the leak tests fail there and pass on JithuBrowser.
 - `tests/run-tests-wine.sh /path/to/wine /path/to/out/JithuBrowser-win`: the same suite for the Windows build under Wine.
 - `tests/site_sweep.py`: loads 20 real websites and flags "unsupported browser" notices; run it on stock Chrome as a control.
 - `tests/extension_check.py <dirs>`: loads Manifest V3 extensions and checks that they really run.
