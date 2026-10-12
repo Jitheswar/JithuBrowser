@@ -11,10 +11,14 @@ PY="${JB_PYTHON:-$ROOT/build-work/venv/bin/python}"
 if [[ -n "${JB_USE_ROOTFS:-}" && -z "${JB_ROOTFS_RUN:-}" ]]; then
   exec "$ROOT/scripts/enter-rootfs.sh" env JB_ROOTFS_RUN=1 "JB_PYTHON=$PY" bash "$ROOT/tests/run-tests.sh" "$BROWSER" "$@"
 fi
-D=:$((90 + RANDOM % 9))
-Xvfb "$D" -screen 0 1920x1080x24 -nolisten tcp >/dev/null 2>&1 &
-XV=$!; trap 'kill $XV $WM 2>/dev/null || true' EXIT
-sleep 1
-DISPLAY=$D openbox >/dev/null 2>&1 &
-WM=$!; sleep 1
+if [[ -z "${JB_DISPLAY:-}" ]]; then
+  D=:$((90 + RANDOM % 9))
+  Xvfb "$D" -screen 0 1920x1080x24 -nolisten tcp >/dev/null 2>&1 &
+  XV=$!; trap 'kill $XV $WM 2>/dev/null || true' EXIT
+  sleep 1
+  DISPLAY=$D openbox >/dev/null 2>&1 &
+  WM=$!; sleep 1
+else
+  D=$JB_DISPLAY
+fi
 DISPLAY=$D JITHU_BROWSER="$BROWSER" "$PY" -m pytest -v "$ROOT/tests/test_privacy.py" "$ROOT/tests/test_emulated_extensions.py" "$@"
