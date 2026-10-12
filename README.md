@@ -2,7 +2,7 @@
 
 **A privacy-focused browser built on official Chromium.** Websites keep working, including Chrome-only ones, and Chrome Web Store extensions install normally. Pages just can't watch what you do.
 
-> Status: **pre-release available** ([download](https://github.com/Jitheswar/JithuBrowser/releases)) for Linux x86_64 and Windows x64. All protections pass the 19-test privacy suite on the Linux build (stock Chrome 155 fails 15 of the 19). The **Windows installer is cross-compiled and untested** on real Windows.
+> Status: **pre-release available** ([download](https://github.com/Jitheswar/JithuBrowser/releases)) for Linux x86_64 and Windows x64. All protections pass the 19-test privacy suite on Linux (stock Chrome 155 fails 15 of the 19) and on the Windows build under Wine (stock Windows Chrome fails 14). Real installs were verified on Ubuntu (`.deb`) and Rocky Linux 9 (`.rpm`). The **Windows installer is cross-compiled and has not been run on real Windows.**
 
 ## What JithuBrowser hides from websites
 
@@ -59,7 +59,7 @@ Every file comes from **https://github.com/Jitheswar/JithuBrowser/releases**. Sc
 3. **If Windows shows a blue "Windows protected your PC" screen:** the installer is not signed with a paid code-signing certificate, which is normal for new open-source projects. Click **More info**, then **Run anyway**. Only do this for a file you downloaded from the Releases page above.
 4. Follow the installer, then open **JithuBrowser** from the Start menu.
 
-> **The Windows build is cross-compiled on Linux and has never been run on Windows.** Expect rough edges, and please [report problems](https://github.com/Jitheswar/JithuBrowser/issues). Do not install it next to Chromium on the same PC.
+> **The Windows build is cross-compiled on Linux. It passes the privacy tests under Wine but has not been run on real Windows.** Expect rough edges, and please [report problems](https://github.com/Jitheswar/JithuBrowser/issues). Do not install it next to Chromium on the same PC.
 
 ### Debian, Ubuntu, Linux Mint, Pop!_OS
 
@@ -170,7 +170,11 @@ Windows: `scripts\windows\build.ps1` then `scripts\windows\package.ps1` (portabl
 
 ## Testing
 
-`tests/test_privacy.py` (pytest) checks each protection against a browser binary: `tests/run-tests.sh /path/to/binary` (starts Xvfb + a window manager so tab switches and minimising are real). Run it against stock Chrome first as a control: the leak tests fail there and pass on JithuBrowser. `tests/detection/` is a manual page that runs similar probes.
+- `tests/run-tests.sh /path/to/browser`: the 19-test privacy suite (pytest) on a virtual display with a window manager, so tab switches and minimising are real. Run it against stock Chrome as a control: the leak tests fail there and pass on JithuBrowser.
+- `tests/run-tests-wine.sh /path/to/wine /path/to/out/JithuBrowser-win`: the same suite for the Windows build under Wine.
+- `tests/site_sweep.py`: loads 20 real websites and flags "unsupported browser" notices; run it on stock Chrome as a control.
+- `tests/extension_check.py <dirs>`: loads Manifest V3 extensions and checks that they really run.
+- `tests/detection/` is a manual page that runs similar probes.
 
 ## License
 
