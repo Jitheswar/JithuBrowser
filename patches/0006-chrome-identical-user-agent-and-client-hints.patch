@@ -1,5 +1,5 @@
 diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
-index 5d96c60405..eef4a1e833 100644
+index 5d96c60405..18b006be76 100644
 --- a/components/embedder_support/user_agent_utils.cc
 +++ b/components/embedder_support/user_agent_utils.cc
 @@ -34,6 +34,7 @@
@@ -31,7 +31,7 @@ index 5d96c60405..eef4a1e833 100644
  #if !BUILDFLAG(CHROMIUM_BRANDING)
    brand = version_info::GetProductName();
  #endif
-+  const bool jithu_reduce = base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserReduceClientHints);
++  const bool jithu_reduce = jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserReduceClientHints);
 +  if (jithu_reduce) {
 +    // JithuBrowser: look exactly like stock Google Chrome so Chrome-only
 +    // sites work and the browser blends in with the largest crowd.
@@ -52,7 +52,7 @@ index 5d96c60405..eef4a1e833 100644
    std::string product = GetProductAndVersion();
 -  if (base::CommandLine::ForCurrentProcess()->HasSwitch(kHeadless)) {
 +  if (base::CommandLine::ForCurrentProcess()->HasSwitch(kHeadless) &&
-+      !base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserReduceClientHints)) {
++      !jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserReduceClientHints)) {
      product.insert(0, "Headless");
    }
  
@@ -60,7 +60,7 @@ index 5d96c60405..eef4a1e833 100644
    metadata.bitness = GetCpuBitness();
    metadata.wow64 = IsWoW64();
    metadata.platform_version = GetPlatformVersion();
-+  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserReduceClientHints)) {
++  if (jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserReduceClientHints)) {
 +    // JithuBrowser: high-entropy hints carry no more information than the
 +    // reduced User-Agent string: no device model, no exact browser or OS
 +    // version, no kernel version on Linux.

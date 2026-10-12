@@ -2,7 +2,7 @@
 
 **A privacy-focused browser built on official Chromium.** Websites keep working, including Chrome-only ones, and Chrome Web Store extensions install normally. Pages just can't watch what you do.
 
-> Status: **pre-release available** ([download](https://github.com/Jitheswar/JithuBrowser/releases)) for Linux x86_64 and Windows x64. All protections pass the 31-test privacy suite on Linux and on the Windows build under Wine (stock Chrome fails 27 of the 31 on Linux and 26 on Windows). Real installs were verified on Ubuntu 22.04 (`.deb`), Fedora 44, Rocky Linux 9.8 and openSUSE Tumbleweed (`.rpm`), and Arch Linux (`makepkg` + `pacman`). The **Windows installer is cross-compiled and has not been run on real Windows.**
+> Status: **pre-release available** ([download](https://github.com/Jitheswar/JithuBrowser/releases)) for Linux x86_64 and Windows x64. All protections pass the 32-test privacy suite on Linux and on the Windows build under Wine (stock Chrome fails 28 of the 32 on Linux and 27 on Windows). Real installs were verified on Ubuntu 22.04 (`.deb`), Fedora 44, Rocky Linux 9.8 and openSUSE Tumbleweed (`.rpm`), and Arch Linux (`makepkg` + `pacman`). The **Windows installer is cross-compiled and has not been run on real Windows.**
 
 ## What JithuBrowser hides from websites
 
@@ -14,6 +14,7 @@
 | Background-tab clocks | That your tab is hidden, from timer and animation-frame rates and from muted videos pausing (hidden tabs normally run at 1 Hz, stop `requestAnimationFrame` and pause video) | Hidden tabs keep running like visible ones (costs some CPU/battery) | verified (tests pass) |
 | Find in page | What you searched for, via canary text in collapsed content (`beforematch`/`toggle` events) | Find skips collapsed content, so matches never signal the page (it will not find text inside closed accordions) | verified (tests pass) |
 | Canvas / WebGL / audio fingerprints | Pixel-exact canvas output, your GPU/driver name (`UNMASKED_RENDERER`), exact offline-audio samples | Canvas readbacks (`getImageData`, `toDataURL`, `toBlob`) differ by at most 1 on about a quarter of the pixels, WebGL reports a generic GPU name, audio renders get a sub-audible change. Not covered: WebGL `readPixels`, `AnalyserNode` data, font probing | verified (tests pass) |
+| Per-site switch | A site that breaks under a protection | App menu → **JithuBrowser protections for this site** (or `--jithubrowser-unprotected-sites=a.com,b.com`) turns the in-page protections off for that site and its subdomains. User-Agent, browser shortcuts and silent fullscreen stay on | verified (test passes) |
 | History | How many pages you visited in the tab (`history.length`, `navigation.entries()`) | Clamped to 2 | verified (dev build, tests pass) |
 | Automation | `navigator.webdriver` | Always `false` | verified (dev build, tests pass) |
 | User-Agent + Client Hints | Exact version, OS version, device model | Looks like stock Google Chrome; high-entropy hints reduced | verified (dev build, tests pass) |
@@ -29,7 +30,7 @@ Each protection is a Chromium feature that is on by default. Turn one off if a s
 jithubrowser --disable-features=JithuBrowserHideVisibility,JithuBrowserProtectKeyboard
 ```
 
-Feature names: `JithuBrowserHideVisibility`, `JithuBrowserHideFocus`, `JithuBrowserHideWindowGeometry`, `JithuBrowserHideHistoryLength`, `JithuBrowserHideAutomation`, `JithuBrowserReduceClientHints`, `JithuBrowserProtectKeyboard`, `JithuBrowserKeystrokeJitter`, `JithuBrowserKeepHiddenTabsActive`, `JithuBrowserPrivateFindInPage`, `JithuBrowserSilentTabFullscreenExit`, `JithuBrowserFarbleCanvas`, `JithuBrowserFarbleWebGL`, `JithuBrowserFarbleAudio`.
+Feature names: `JithuBrowserHideVisibility`, `JithuBrowserHideFocus`, `JithuBrowserHideWindowGeometry`, `JithuBrowserHideHistoryLength`, `JithuBrowserHideAutomation`, `JithuBrowserReduceClientHints`, `JithuBrowserProtectKeyboard`, `JithuBrowserKeystrokeJitter`, `JithuBrowserKeepHiddenTabsActive`, `JithuBrowserPrivateFindInPage`, `JithuBrowserSilentTabFullscreenExit`, `JithuBrowserFarbleCanvas`, `JithuBrowserFarbleWebGL`, `JithuBrowserFarbleAudio`, `JithuBrowserSiteSettings`, `JithuBrowserUpdateCheck`.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for what is still planned and [docs/DESIGN.md](docs/DESIGN.md) for limits (what a page can still work out).
 
@@ -58,7 +59,7 @@ Every file comes from **https://github.com/Jitheswar/JithuBrowser/releases**. Sc
 ### Windows
 
 1. Download the file ending in `-windows-x64-installer.exe`.
-2. Double-click it.
+2. Double-click it. A setup window with a progress animation opens and shows when JithuBrowser is installed (add `--silent` to hide the window).
 3. **If Windows shows a blue "Windows protected your PC" screen:** the installer is not signed with a paid code-signing certificate, which is normal for new open-source projects. Click **More info**, then **Run anyway**. Only do this for a file you downloaded from the Releases page above.
 4. Follow the installer, then open **JithuBrowser** from the Start menu.
 
@@ -139,7 +140,7 @@ Each release has a `SHA256SUMS` file that lets you confirm your download is comp
 
 ### Updating and uninstalling
 
-JithuBrowser does not update itself yet. To update, download the newest release and install it the same way as before; your bookmarks and settings are kept.
+JithuBrowser checks GitHub once, 30 seconds after it starts, and shows a bar when a newer release exists; it never installs anything by itself. To update, click **Open download page** (or visit the Releases page), download the newest file and install it the same way as before; your bookmarks and settings are kept. This check is one plain HTTPS request to `api.github.com` with no cookies; turn it off with `--disable-features=JithuBrowserUpdateCheck`.
 
 | System | Uninstall |
 |---|---|
@@ -173,7 +174,7 @@ Windows: `scripts\windows\build.ps1` then `scripts\windows\package.ps1` (portabl
 
 ## Testing
 
-- `tests/run-tests.sh /path/to/browser`: the 31-test privacy suite (pytest) on a virtual display with a window manager, so tab switches and minimising are real. Run it against stock Chrome as a control: the leak tests fail there and pass on JithuBrowser.
+- `tests/run-tests.sh /path/to/browser`: the 32-test privacy suite (pytest) on a virtual display with a window manager, so tab switches and minimising are real. Run it against stock Chrome as a control: the leak tests fail there and pass on JithuBrowser.
 - `tests/run-tests-wine.sh /path/to/wine /path/to/out/JithuBrowser-win`: the same suite for the Windows build under Wine.
 - `tests/site_sweep.py`: loads 20 real websites and flags "unsupported browser" notices; run it on stock Chrome as a control.
 - `tests/extension_check.py <dirs>`: loads Manifest V3 extensions and checks that they really run.

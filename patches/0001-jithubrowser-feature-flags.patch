@@ -1,9 +1,152 @@
+diff --git a/third_party/blink/common/BUILD.gn b/third_party/blink/common/BUILD.gn
+index 8e635b0da3..c37d7fd29b 100644
+--- a/third_party/blink/common/BUILD.gn
++++ b/third_party/blink/common/BUILD.gn
+@@ -151,6 +151,7 @@ source_set("common") {
+     "device_memory/approximated_device_memory.cc",
+     "dom_storage/session_storage_namespace_id.cc",
+     "features.cc",
++    "jithubrowser_features.cc",
+     "fenced_frame/fenced_frame_utils.cc",
+     "fenced_frame/redacted_fenced_frame_config.cc",
+     "fenced_frame/redacted_fenced_frame_config_mojom_traits.cc",
+diff --git a/third_party/blink/common/jithubrowser_features.cc b/third_party/blink/common/jithubrowser_features.cc
+new file mode 100644
+index 0000000000..c78191e329
+--- /dev/null
++++ b/third_party/blink/common/jithubrowser_features.cc
+@@ -0,0 +1,113 @@
++// Copyright 2026 The JithuBrowser Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "third_party/blink/public/common/jithubrowser_features.h"
++
++#include <algorithm>
++#include <atomic>
++
++#include "base/rand_util.h"
++
++namespace jithubrowser::features {
++
++BASE_FEATURE(kJithuBrowserHideVisibility, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kJithuBrowserHideFocus, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kJithuBrowserHideWindowGeometry, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kJithuBrowserHideHistoryLength, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kJithuBrowserHideAutomation, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kJithuBrowserReduceClientHints, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kJithuBrowserProtectKeyboard, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kJithuBrowserKeystrokeJitter, base::FEATURE_ENABLED_BY_DEFAULT);
++const base::FeatureParam<int> kJithuBrowserKeystrokeJitterMaxMs{
++    &kJithuBrowserKeystrokeJitter, "max_ms", 30};
++const base::FeatureParam<int> kJithuBrowserKeystrokeDelayMaxMs{
++    &kJithuBrowserKeystrokeJitter, "delay_max_ms", 20};
++
++BASE_FEATURE(kJithuBrowserKeepHiddenTabsActive, base::FEATURE_ENABLED_BY_DEFAULT);
++
++BASE_FEATURE(kJithuBrowserPrivateFindInPage, base::FEATURE_ENABLED_BY_DEFAULT);
++
++BASE_FEATURE(kJithuBrowserSilentTabFullscreenExit,
++             base::FEATURE_ENABLED_BY_DEFAULT);
++
++BASE_FEATURE(kJithuBrowserUpdateCheck, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kJithuBrowserSiteSettings, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kJithuBrowserFarbleCanvas, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kJithuBrowserFarbleWebGL, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kJithuBrowserFarbleAudio, base::FEATURE_ENABLED_BY_DEFAULT);
++
++namespace {
++std::atomic<bool> g_protections_suspended{false};
++uint64_t Mix(uint64_t x) {
++  x ^= x >> 33;
++  x *= 0xff51afd7ed558ccdULL;
++  x ^= x >> 33;
++  x *= 0xc4ceb9fe1a85ec53ULL;
++  x ^= x >> 33;
++  return x;
++}
++}  // namespace
++
++void SetProtectionsSuspended(bool suspended) {
++  g_protections_suspended.store(suspended, std::memory_order_relaxed);
++}
++
++bool ProtectionsSuspended() {
++  return g_protections_suspended.load(std::memory_order_relaxed);
++}
++
++bool IsOn(const base::Feature& feature) {
++  return !ProtectionsSuspended() && base::FeatureList::IsEnabled(feature);
++}
++
++uint64_t FarbleSeed() {
++  static const uint64_t seed = base::RandUint64();
++  return seed;
++}
++
++void FarblePixels(uint8_t* data,
++                  size_t row_bytes,
++                  int width,
++                  int height,
++                  bool premultiplied) {
++  // Tiny images are used for feature detection; leave them exact.
++  if (!data || width <= 0 || height <= 0 ||
++      static_cast<int64_t>(width) * height <= 64) {
++    return;
++  }
++  const uint64_t seed = FarbleSeed();
++  for (int y = 0; y < height; ++y) {
++    uint8_t* row = data + static_cast<size_t>(y) * row_bytes;
++    for (int x = 0; x < width; ++x) {
++      uint8_t* px = row + static_cast<size_t>(x) * 4;
++      const int alpha = px[3];
++      if (alpha == 0) {
++        continue;
++      }
++      const uint64_t h = Mix(seed ^ (static_cast<uint64_t>(y) << 32 | x));
++      if ((h & 3) != 0) {  // perturb about a quarter of the pixels
++        continue;
++      }
++      for (int c = 0; c < 3; ++c) {
++        const int delta = ((h >> (8 + 2 * c)) & 1) ? 1 : -1;
++        const int limit = premultiplied ? alpha : 255;
++        px[c] = static_cast<uint8_t>(std::clamp(px[c] + delta, 0, limit));
++      }
++    }
++  }
++}
++
++void FarbleAudioSamples(float* data, size_t count) {
++  if (!data) {
++    return;
++  }
++  const uint64_t seed = FarbleSeed();
++  for (size_t i = 0; i < count; ++i) {
++    const uint64_t h = Mix(seed ^ i);
++    const float noise = (static_cast<float>(h & 0xffff) / 32768.0f - 1.0f) * 1e-7f;
++    data[i] *= 1.0f + noise;
++  }
++}
++
++}  // namespace jithubrowser::features
+diff --git a/third_party/blink/public/common/BUILD.gn b/third_party/blink/public/common/BUILD.gn
+index 5a5d9a64a4..60e082e35d 100644
+--- a/third_party/blink/public/common/BUILD.gn
++++ b/third_party/blink/public/common/BUILD.gn
+@@ -144,6 +144,7 @@ source_set("headers") {
+     "dom/dom_node_id.h",
+     "dom_storage/session_storage_namespace_id.h",
+     "features.h",
++    "jithubrowser_features.h",
+     "fenced_frame/fenced_frame_utils.h",
+     "fenced_frame/redacted_fenced_frame_config.h",
+     "fenced_frame/redacted_fenced_frame_config_mojom_traits.h",
 diff --git a/third_party/blink/public/common/jithubrowser_features.h b/third_party/blink/public/common/jithubrowser_features.h
 new file mode 100644
-index 0000000000..0931f3ab70
+index 0000000000..11f0cad74d
 --- /dev/null
 +++ b/third_party/blink/public/common/jithubrowser_features.h
-@@ -0,0 +1,102 @@
+@@ -0,0 +1,119 @@
 +// Copyright 2026 The JithuBrowser Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -83,9 +226,26 @@ index 0000000000..0931f3ab70
 +// noise, WebGL's unmasked vendor/renderer strings are generic, and offline
 +// audio renders get a sub-audible perturbation, so the values no longer
 +// identify your GPU/driver stack. Pages still work; pixels differ by +-1.
++// Tells you when a newer JithuBrowser release exists (one request to the
++// GitHub releases API at startup; nothing is installed automatically).
++BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserUpdateCheck);
++// Release number within the pinned Chromium version (JITHUBROWSER_REVISION).
++inline constexpr int kJithuBrowserRevision = 9;
++
++// Per-site settings (app menu: "Protect this site").
++BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserSiteSettings);
 +BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserFarbleCanvas);
 +BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserFarbleWebGL);
 +BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserFarbleAudio);
++
++// Per-site settings: the browser sets this for tabs on sites where the user
++// turned protections off. Process-wide, so all tabs in one renderer process
++// share it (same-site tabs normally share a process).
++BLINK_COMMON_EXPORT void SetProtectionsSuspended(bool suspended);
++BLINK_COMMON_EXPORT bool ProtectionsSuspended();
++// base::FeatureList::IsEnabled(feature) && !ProtectionsSuspended(). Every
++// JithuBrowser check goes through this.
++BLINK_COMMON_EXPORT bool IsOn(const base::Feature& feature);
 +
 +// Random per renderer process, never persisted.
 +BLINK_COMMON_EXPORT uint64_t FarbleSeed();
@@ -106,106 +266,3 @@ index 0000000000..0931f3ab70
 +}  // namespace jithubrowser::features
 +
 +#endif  // THIRD_PARTY_BLINK_PUBLIC_COMMON_JITHUBROWSER_FEATURES_H_
-diff --git a/third_party/blink/common/jithubrowser_features.cc b/third_party/blink/common/jithubrowser_features.cc
-new file mode 100644
-index 0000000000..a094ad3617
---- /dev/null
-+++ b/third_party/blink/common/jithubrowser_features.cc
-@@ -0,0 +1,97 @@
-+// Copyright 2026 The JithuBrowser Authors
-+// Use of this source code is governed by a BSD-style license that can be
-+// found in the LICENSE file.
-+
-+#include "third_party/blink/public/common/jithubrowser_features.h"
-+
-+#include <algorithm>
-+
-+#include "base/rand_util.h"
-+
-+namespace jithubrowser::features {
-+
-+BASE_FEATURE(kJithuBrowserHideVisibility, base::FEATURE_ENABLED_BY_DEFAULT);
-+BASE_FEATURE(kJithuBrowserHideFocus, base::FEATURE_ENABLED_BY_DEFAULT);
-+BASE_FEATURE(kJithuBrowserHideWindowGeometry, base::FEATURE_ENABLED_BY_DEFAULT);
-+BASE_FEATURE(kJithuBrowserHideHistoryLength, base::FEATURE_ENABLED_BY_DEFAULT);
-+BASE_FEATURE(kJithuBrowserHideAutomation, base::FEATURE_ENABLED_BY_DEFAULT);
-+BASE_FEATURE(kJithuBrowserReduceClientHints, base::FEATURE_ENABLED_BY_DEFAULT);
-+BASE_FEATURE(kJithuBrowserProtectKeyboard, base::FEATURE_ENABLED_BY_DEFAULT);
-+BASE_FEATURE(kJithuBrowserKeystrokeJitter, base::FEATURE_ENABLED_BY_DEFAULT);
-+const base::FeatureParam<int> kJithuBrowserKeystrokeJitterMaxMs{
-+    &kJithuBrowserKeystrokeJitter, "max_ms", 30};
-+const base::FeatureParam<int> kJithuBrowserKeystrokeDelayMaxMs{
-+    &kJithuBrowserKeystrokeJitter, "delay_max_ms", 20};
-+
-+BASE_FEATURE(kJithuBrowserKeepHiddenTabsActive, base::FEATURE_ENABLED_BY_DEFAULT);
-+
-+BASE_FEATURE(kJithuBrowserPrivateFindInPage, base::FEATURE_ENABLED_BY_DEFAULT);
-+
-+BASE_FEATURE(kJithuBrowserSilentTabFullscreenExit,
-+             base::FEATURE_ENABLED_BY_DEFAULT);
-+
-+BASE_FEATURE(kJithuBrowserFarbleCanvas, base::FEATURE_ENABLED_BY_DEFAULT);
-+BASE_FEATURE(kJithuBrowserFarbleWebGL, base::FEATURE_ENABLED_BY_DEFAULT);
-+BASE_FEATURE(kJithuBrowserFarbleAudio, base::FEATURE_ENABLED_BY_DEFAULT);
-+
-+namespace {
-+uint64_t Mix(uint64_t x) {
-+  x ^= x >> 33;
-+  x *= 0xff51afd7ed558ccdULL;
-+  x ^= x >> 33;
-+  x *= 0xc4ceb9fe1a85ec53ULL;
-+  x ^= x >> 33;
-+  return x;
-+}
-+}  // namespace
-+
-+uint64_t FarbleSeed() {
-+  static const uint64_t seed = base::RandUint64();
-+  return seed;
-+}
-+
-+void FarblePixels(uint8_t* data,
-+                  size_t row_bytes,
-+                  int width,
-+                  int height,
-+                  bool premultiplied) {
-+  // Tiny images are used for feature detection; leave them exact.
-+  if (!data || width <= 0 || height <= 0 ||
-+      static_cast<int64_t>(width) * height <= 64) {
-+    return;
-+  }
-+  const uint64_t seed = FarbleSeed();
-+  for (int y = 0; y < height; ++y) {
-+    uint8_t* row = data + static_cast<size_t>(y) * row_bytes;
-+    for (int x = 0; x < width; ++x) {
-+      uint8_t* px = row + static_cast<size_t>(x) * 4;
-+      const int alpha = px[3];
-+      if (alpha == 0) {
-+        continue;
-+      }
-+      const uint64_t h = Mix(seed ^ (static_cast<uint64_t>(y) << 32 | x));
-+      if ((h & 3) != 0) {  // perturb about a quarter of the pixels
-+        continue;
-+      }
-+      for (int c = 0; c < 3; ++c) {
-+        const int delta = ((h >> (8 + 2 * c)) & 1) ? 1 : -1;
-+        const int limit = premultiplied ? alpha : 255;
-+        px[c] = static_cast<uint8_t>(std::clamp(px[c] + delta, 0, limit));
-+      }
-+    }
-+  }
-+}
-+
-+void FarbleAudioSamples(float* data, size_t count) {
-+  if (!data) {
-+    return;
-+  }
-+  const uint64_t seed = FarbleSeed();
-+  for (size_t i = 0; i < count; ++i) {
-+    const uint64_t h = Mix(seed ^ i);
-+    const float noise = (static_cast<float>(h & 0xffff) / 32768.0f - 1.0f) * 1e-7f;
-+    data[i] *= 1.0f + noise;
-+  }
-+}
-+
-+}  // namespace jithubrowser::features

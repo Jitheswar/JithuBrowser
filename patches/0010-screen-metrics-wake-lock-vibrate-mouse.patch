@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/core/frame/screen.cc b/third_party/blink/renderer/core/frame/screen.cc
-index ed5028943e..d11138e6a0 100644
+index ed5028943e..32922aedd3 100644
 --- a/third_party/blink/renderer/core/frame/screen.cc
 +++ b/third_party/blink/renderer/core/frame/screen.cc
 @@ -28,6 +28,8 @@
@@ -27,7 +27,7 @@ index ed5028943e..d11138e6a0 100644
 -  if (prev.available_rect != current.available_rect) {
 +  // avail[Left|Top|Width|Height]() use available_rect. JithuBrowser reports the
 +  // full screen rect there, so taskbar/dock changes are not observable.
-+  if (!base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideWindowGeometry) &&
++  if (!jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideWindowGeometry) &&
 +      prev.available_rect != current.available_rect) {
      return false;
    }
@@ -39,7 +39,7 @@ index ed5028943e..d11138e6a0 100644
 -  // isExtended()
 -  if (prev.is_extended != current.is_extended) {
 +  // isExtended() (always false under JithuBrowser)
-+  if (!base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideWindowGeometry) &&
++  if (!jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideWindowGeometry) &&
 +      prev.is_extended != current.is_extended) {
      return false;
    }
@@ -50,7 +50,7 @@ index ed5028943e..d11138e6a0 100644
  
 +  // JithuBrowser: do not reveal multi-monitor setups without a permission
 +  // prompt; getScreenDetails() remains available for sites that need it.
-+  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
++  if (jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
 +    return false;
 +  }
    return GetScreenInfo().is_extended;
@@ -60,7 +60,7 @@ index ed5028943e..d11138e6a0 100644
    LocalFrame* frame = DomWindow()->GetFrame();
    const display::ScreenInfo& screen_info = GetScreenInfo();
    gfx::Rect rect = available ? screen_info.available_rect : screen_info.rect;
-+  if (available && base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
++  if (available && jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
 +    // JithuBrowser: avail* equals the full screen; no taskbar/dock information.
 +    rect = screen_info.rect;
 +  }
@@ -68,7 +68,7 @@ index ed5028943e..d11138e6a0 100644
      return gfx::ScaleToRoundedRect(rect, screen_info.device_scale_factor);
    if (frame->GetDocument() && frame->GetDocument()->TextScaleMetaTagPresent()) {
 diff --git a/third_party/blink/renderer/core/events/mouse_event.cc b/third_party/blink/renderer/core/events/mouse_event.cc
-index 19f0f66095..33dd85eda4 100644
+index 19f0f66095..c8831c9c6b 100644
 --- a/third_party/blink/renderer/core/events/mouse_event.cc
 +++ b/third_party/blink/renderer/core/events/mouse_event.cc
 @@ -22,7 +22,10 @@
@@ -115,7 +115,7 @@ index 19f0f66095..33dd85eda4 100644
 +  // state, so derive them from the in-widget position and the spoofed window
 +  // geometry (window origin at 0,0 with the browser UI above the viewport).
 +  if (!pointer_locked && dom_window && dom_window->GetFrame() &&
-+      base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
++      jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
 +    LocalFrame* jithu_frame = dom_window->GetFrame();
 +    const float dsf = jithu_frame->GetChromeClient()
 +                          .GetScreenInfo(*jithu_frame)
@@ -133,7 +133,7 @@ index 19f0f66095..33dd85eda4 100644
    initializer->setScreenY(screen_point.y());
    initializer->setClientX(client_point.x());
 diff --git a/third_party/blink/renderer/modules/wake_lock/wake_lock.cc b/third_party/blink/renderer/modules/wake_lock/wake_lock.cc
-index 1ee9839aa8..3e59f3533a 100644
+index 1ee9839aa8..c9c5101ea7 100644
 --- a/third_party/blink/renderer/modules/wake_lock/wake_lock.cc
 +++ b/third_party/blink/renderer/modules/wake_lock/wake_lock.cc
 @@ -6,6 +6,7 @@
@@ -153,7 +153,7 @@ index 1ee9839aa8..3e59f3533a 100644
 +// JithuBrowser: the real page visibility is not exposed to script, so Wake
 +// Lock must not reject requests or fire 'release' when the tab is hidden.
 +bool IsPageVisibleToScript(const Page* page) {
-+  return page && (page->IsPageVisible() || base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility));
++  return page && (page->IsPageVisible() || jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideVisibility));
 +}
 +
 +}  // namespace
@@ -189,7 +189,7 @@ index 1ee9839aa8..3e59f3533a 100644
    // 1. For each lock in document.[[ActiveLocks]]["screen"]:
    // 1.1. Run release a wake lock with document, lock, and "screen".
 diff --git a/third_party/blink/renderer/modules/vibration/vibration_controller.cc b/third_party/blink/renderer/modules/vibration/vibration_controller.cc
-index 3ba3da135c..58ab2d77ca 100644
+index 3ba3da135c..10cee89d6a 100644
 --- a/third_party/blink/renderer/modules/vibration/vibration_controller.cc
 +++ b/third_party/blink/renderer/modules/vibration/vibration_controller.cc
 @@ -22,6 +22,7 @@
@@ -206,7 +206,7 @@ index 3ba3da135c..58ab2d77ca 100644
    LocalFrame* frame = DomWindow()->GetFrame();
 -  if (!frame->GetPage()->IsPageVisible())
 +  // JithuBrowser: the return value must not reveal whether the tab is hidden.
-+  if (!frame->GetPage()->IsPageVisible() && !base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility))
++  if (!frame->GetPage()->IsPageVisible() && !jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideVisibility))
      return false;
  
    if (!frame->HasStickyUserActivation()) {

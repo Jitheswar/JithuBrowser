@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/core/events/keyboard_event.cc b/third_party/blink/renderer/core/events/keyboard_event.cc
-index 7f91061eb3..dff5160165 100644
+index 7f91061eb3..ad01feb3eb 100644
 --- a/third_party/blink/renderer/core/events/keyboard_event.cc
 +++ b/third_party/blink/renderer/core/events/keyboard_event.cc
 @@ -22,9 +22,14 @@
@@ -27,7 +27,7 @@ index 7f91061eb3..dff5160165 100644
 +// between keystrokes no longer identify the typist. Delivery order and timing
 +// of the events themselves (and so preventDefault) are unchanged.
 +base::TimeTicks JithuBrowserJitterKeyTimeStamp(base::TimeTicks ts) {
-+  if (!base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserKeystrokeJitter) || ts.is_null()) {
++  if (!jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserKeystrokeJitter) || ts.is_null()) {
 +    return ts;
 +  }
 +  thread_local base::TimeTicks last_stamp;

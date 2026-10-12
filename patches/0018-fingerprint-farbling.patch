@@ -1,8 +1,8 @@
 diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc b/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
-index d05ea261a9..ae6017a05a 100644
+index d05ea261a9..620c48f79f 100644
 --- a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
 +++ b/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
-@@ -43,8 +43,32 @@
+@@ -43,8 +43,31 @@
  #include "ui/gfx/hdr_metadata.h"
  #include "ui/gfx/skia_span_util.h"
  
@@ -15,8 +15,7 @@ index d05ea261a9..ae6017a05a 100644
 +// JithuBrowser: returns pixels perturbed for fingerprinting protection, or
 +// the original pixmap when nothing needs to change.
 +const SkPixmap& JithuFarbled(const SkPixmap& in, SkBitmap* storage) {
-+  if (!base::FeatureList::IsEnabled(
-+          jithubrowser::features::kJithuBrowserFarbleCanvas) ||
++  if (!jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserFarbleCanvas) ||
 +      (in.colorType() != kRGBA_8888_SkColorType &&
 +       in.colorType() != kBGRA_8888_SkColorType)) {
 +    return in;
@@ -35,7 +34,7 @@ index d05ea261a9..ae6017a05a 100644
  ImageDataBuffer::ImageDataBuffer(scoped_refptr<StaticBitmapImage> image) {
    if (!image)
      return;
-@@ -139,14 +163,18 @@ base::span<const uint8_t> ImageDataBuffer::PixelData() const {
+@@ -139,14 +162,18 @@ base::span<const uint8_t> ImageDataBuffer::PixelData() const {
  bool ImageDataBuffer::EncodeImage(const ImageEncodingMimeType mime_type,
                                    const double& quality,
                                    Vector<unsigned char>* encoded_image) const {
@@ -57,7 +56,7 @@ index d05ea261a9..ae6017a05a 100644
    }
    return StrCat({"data:", ImageEncoderUtils::MimeTypeName(mime_type),
 diff --git a/third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.cc b/third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.cc
-index 8e9d842904..c76d2b6fb1 100644
+index 8e9d842904..5db331292c 100644
 --- a/third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.cc
 +++ b/third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.cc
 @@ -4,6 +4,8 @@
@@ -69,13 +68,12 @@ index 8e9d842904..c76d2b6fb1 100644
  #include "base/location.h"
  #include "base/metrics/histogram_functions.h"
  #include "base/metrics/histogram_macros.h"
-@@ -212,6 +214,23 @@ CanvasAsyncBlobCreator::CanvasAsyncBlobCreator(
+@@ -212,6 +214,22 @@ CanvasAsyncBlobCreator::CanvasAsyncBlobCreator(
        skia_image_->readPixels(info, pixel, info.minRowBytes(), 0, 0);
      }
  
 +    // JithuBrowser: fingerprinting protection, encode a perturbed copy.
-+    if (base::FeatureList::IsEnabled(
-+            jithubrowser::features::kJithuBrowserFarbleCanvas) &&
++    if (jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserFarbleCanvas) &&
 +        (skia_image_->colorType() == kRGBA_8888_SkColorType ||
 +         skia_image_->colorType() == kBGRA_8888_SkColorType)) {
 +      SkBitmap farbled;
@@ -94,7 +92,7 @@ index 8e9d842904..c76d2b6fb1 100644
        static_bitmap_image_loaded_ = true;
  
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-index 89fcf5f32b..82b544a0bb 100644
+index 89fcf5f32b..c19cc008e2 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 @@ -4,6 +4,8 @@
@@ -106,13 +104,12 @@ index 89fcf5f32b..82b544a0bb 100644
  #include <cmath>
  #include <cstdint>
  #include <cstdlib>
-@@ -511,6 +513,16 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
+@@ -511,6 +513,15 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
          snapshot->PaintImageForCurrentFrame().readPixels(
              image_data_pixmap.info(), image_data_pixmap.writable_addr(),
              image_data_pixmap.rowBytes(), sx, sy);
 +    if (read_pixels_successful &&
-+        base::FeatureList::IsEnabled(
-+            jithubrowser::features::kJithuBrowserFarbleCanvas) &&
++        jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserFarbleCanvas) &&
 +        image_data_pixmap.colorType() == kRGBA_8888_SkColorType) {
 +      jithubrowser::features::FarblePixels(
 +          static_cast<uint8_t*>(image_data_pixmap.writable_addr()),
@@ -124,7 +121,7 @@ index 89fcf5f32b..82b544a0bb 100644
        SkIRect bounds =
            snapshot->PaintImageForCurrentFrame().GetSkImageInfo().bounds();
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index b452298c24..9967d01e61 100644
+index b452298c24..0a4da1fff0 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -25,6 +25,8 @@
@@ -136,12 +133,11 @@ index b452298c24..9967d01e61 100644
  #include <inttypes.h>
  
  #include <memory>
-@@ -4216,6 +4218,13 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4216,6 +4218,12 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
        return ScriptValue::CreateNull(script_state->GetIsolate());
      case WebGLDebugRendererInfo::kUnmaskedRendererWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
-+        if (base::FeatureList::IsEnabled(
-+                jithubrowser::features::kJithuBrowserFarbleWebGL)) {
++        if (jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserFarbleWebGL)) {
 +          return WebGLAny(script_state,
 +                          String("ANGLE (Google, Vulkan 1.3.0 (SwiftShader "
 +                                 "Device (Subzero) (0x0000C0DE)), SwiftShader "
@@ -150,19 +146,18 @@ index b452298c24..9967d01e61 100644
          return WebGLAny(script_state,
                          String(ContextGL()->GetString(GL_RENDERER)));
        }
-@@ -4225,6 +4234,10 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4225,6 +4233,9 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
        return ScriptValue::CreateNull(script_state->GetIsolate());
      case WebGLDebugRendererInfo::kUnmaskedVendorWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
-+        if (base::FeatureList::IsEnabled(
-+                jithubrowser::features::kJithuBrowserFarbleWebGL)) {
++        if (jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserFarbleWebGL)) {
 +          return WebGLAny(script_state, String("Google Inc. (Google)"));
 +        }
          return WebGLAny(script_state,
                          String(ContextGL()->GetString(GL_VENDOR)));
        }
 diff --git a/third_party/blink/renderer/modules/webaudio/offline_audio_context.cc b/third_party/blink/renderer/modules/webaudio/offline_audio_context.cc
-index 4604be68ad..471caeefcf 100644
+index 4604be68ad..c47b4dd3a4 100644
 --- a/third_party/blink/renderer/modules/webaudio/offline_audio_context.cc
 +++ b/third_party/blink/renderer/modules/webaudio/offline_audio_context.cc
 @@ -25,6 +25,8 @@
@@ -174,13 +169,12 @@ index 4604be68ad..471caeefcf 100644
  #include "base/metrics/histogram_functions.h"
  #include "base/metrics/histogram_macros.h"
  #include "media/base/audio_glitch_info.h"
-@@ -437,6 +439,16 @@ void OfflineAudioContext::FireCompletionEvent() {
+@@ -437,6 +439,15 @@ void OfflineAudioContext::FireCompletionEvent() {
        return;
      }
  
 +    // JithuBrowser: fingerprinting protection, perturb the rendered samples.
-+    if (base::FeatureList::IsEnabled(
-+            jithubrowser::features::kJithuBrowserFarbleAudio)) {
++    if (jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserFarbleAudio)) {
 +      for (unsigned i = 0; i < rendered_buffer->numberOfChannels(); ++i) {
 +        NotShared<DOMFloat32Array> channel = rendered_buffer->getChannelData(i);
 +        jithubrowser::features::FarbleAudioSamples(channel->Data(),

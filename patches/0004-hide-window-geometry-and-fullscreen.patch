@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/core/frame/local_dom_window.cc b/third_party/blink/renderer/core/frame/local_dom_window.cc
-index 0269587971..34fab7f848 100644
+index 0269587971..e2fe017b3d 100644
 --- a/third_party/blink/renderer/core/frame/local_dom_window.cc
 +++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
 @@ -26,6 +26,9 @@
@@ -32,7 +32,7 @@ index 0269587971..34fab7f848 100644
 +// widgets (including out-of-process iframes) receive the main frame's visible
 +// viewport from the browser, so every frame reports the same values.
 +std::optional<gfx::Size> JithuBrowserOuterSize(LocalFrame* frame) {
-+  if (!base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
++  if (!jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
 +    return std::nullopt;
 +  }
 +  WebLocalFrameImpl* web_frame = WebLocalFrameImpl::FromFrame(frame);
@@ -87,7 +87,7 @@ index 0269587971..34fab7f848 100644
    LocalFrame* frame = GetFrame();
 -  if (!frame) {
 -    return 0;
-+  if (!frame || base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
++  if (!frame || jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
 +    return 0;  // JithuBrowser: window position is not exposed.
    }
  
@@ -98,13 +98,13 @@ index 0269587971..34fab7f848 100644
    LocalFrame* frame = GetFrame();
 -  if (!frame) {
 -    return 0;
-+  if (!frame || base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
++  if (!frame || jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
 +    return 0;  // JithuBrowser: window position is not exposed.
    }
  
    Page* page = frame->GetPage();
 diff --git a/third_party/blink/renderer/core/css/media_values.cc b/third_party/blink/renderer/core/css/media_values.cc
-index 0d60244742..579d0175dd 100644
+index 0d60244742..354d59ca50 100644
 --- a/third_party/blink/renderer/core/css/media_values.cc
 +++ b/third_party/blink/renderer/core/css/media_values.cc
 @@ -4,6 +4,10 @@
@@ -127,7 +127,7 @@ index 0d60244742..579d0175dd 100644
 +  // JithuBrowser: browser-level fullscreen (F11) looks like an ordinary window.
 +  // Fullscreen the page requested itself is still reported (the page already
 +  // knows about it). Computed on the main thread, per document.
-+  if (display_mode == mojom::blink::DisplayMode::kFullscreen && base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideWindowGeometry) &&
++  if (display_mode == mojom::blink::DisplayMode::kFullscreen && jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideWindowGeometry) &&
 +      !Fullscreen::FullscreenElementFrom(*frame->GetDocument())) {
 +    display_mode = mojom::blink::DisplayMode::kBrowser;
 +  }
@@ -142,7 +142,7 @@ index 0d60244742..579d0175dd 100644
 -  return widget->WindowShowState();
 +  ui::mojom::blink::WindowShowState state = widget->WindowShowState();
 +  // JithuBrowser: never reveal minimised / maximised / browser-fullscreen state.
-+  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
++  if (jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
 +    const bool page_fullscreen =
 +        state == ui::mojom::blink::WindowShowState::kFullscreen &&
 +        Fullscreen::FullscreenElementFrom(*frame->GetDocument());
@@ -155,7 +155,7 @@ index 0d60244742..579d0175dd 100644
  
  bool MediaValues::CalculateResizable(LocalFrame* frame) {
 diff --git a/third_party/blink/renderer/core/fullscreen/fullscreen.cc b/third_party/blink/renderer/core/fullscreen/fullscreen.cc
-index eac4cc103a..9b02f9668b 100644
+index eac4cc103a..76959c2dc4 100644
 --- a/third_party/blink/renderer/core/fullscreen/fullscreen.cc
 +++ b/third_party/blink/renderer/core/fullscreen/fullscreen.cc
 @@ -35,8 +35,10 @@
@@ -176,7 +176,7 @@ index eac4cc103a..9b02f9668b 100644
 +    // JithuBrowser: display-mode/display-state only report fullscreen while an
 +    // element of this document is fullscreen, so re-evaluate media queries
 +    // whenever that changes.
-+    if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
++    if (jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideWindowGeometry)) {
 +      frame->LocalFrameRoot().MediaQueryAffectingValueChangedForLocalSubtree(
 +          MediaValueChange::kOther);
 +    }

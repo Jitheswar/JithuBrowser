@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/platform/widget/input/widget_input_handler_impl.cc b/third_party/blink/renderer/platform/widget/input/widget_input_handler_impl.cc
-index 42befad486..2533abda61 100644
+index 42befad486..68a8a06ce9 100644
 --- a/third_party/blink/renderer/platform/widget/input/widget_input_handler_impl.cc
 +++ b/third_party/blink/renderer/platform/widget/input/widget_input_handler_impl.cc
 @@ -4,18 +4,22 @@
@@ -34,7 +34,7 @@ index 42befad486..2533abda61 100644
 +  // only after this one is acknowledged, so order is preserved; later events of any type are held back
 +  // until the pending delayed one has been delivered, so a click never overtakes a keystroke.
 +  if (event && !in_delayed_dispatch_ &&
-+      base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserKeystrokeJitter)) {
++      jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserKeystrokeJitter)) {
 +    const base::TimeTicks now = base::TimeTicks::Now();
 +    // The character event follows its key-down within microseconds, so delaying it too would only add
 +    // latency; key-down and key-up carry the timing a page could measure.
@@ -120,7 +120,7 @@ index 051616f0ed..e52bfe1288 100644
  };
  
 diff --git a/third_party/blink/renderer/core/navigation_api/navigation_api.cc b/third_party/blink/renderer/core/navigation_api/navigation_api.cc
-index 94bd029176..108dda32a4 100644
+index 94bd029176..041ba560c9 100644
 --- a/third_party/blink/renderer/core/navigation_api/navigation_api.cc
 +++ b/third_party/blink/renderer/core/navigation_api/navigation_api.cc
 @@ -10,6 +10,7 @@
@@ -143,7 +143,7 @@ index 94bd029176..108dda32a4 100644
 +  }
 +  // JithuBrowser: like history.length, do not reveal how deep this tab's same-origin history is: script sees
 +  // only the current entry and the one before it, with indices 0 and 1.
-+  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideHistoryLength) && current_entry_index_ >= 0) {
++  if (jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideHistoryLength) && current_entry_index_ >= 0) {
 +    HeapVector<Member<NavigationHistoryEntry>> visible;
 +    const wtf_size_t current = static_cast<wtf_size_t>(current_entry_index_);
 +    for (wtf_size_t i = current > 0 ? current - 1 : 0;
@@ -157,7 +157,7 @@ index 94bd029176..108dda32a4 100644
 +
 +int NavigationApi::GetExposedIndexFor(NavigationHistoryEntry* entry) {
 +  const int index = GetIndexFor(entry);
-+  if (index < 0 || !(base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideHistoryLength) && current_entry_index_ >= 0)) {
++  if (index < 0 || !(jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideHistoryLength) && current_entry_index_ >= 0)) {
 +    return index;
 +  }
 +  const int first_visible = current_entry_index_ > 0 ? current_entry_index_ - 1 : 0;

@@ -139,13 +139,13 @@ class Cdp:
 
 
 class RawBrowser:
-    def __init__(self, binary):
+    def __init__(self, binary, extra_args=()):
         self.port = _free_port()
         self.profile = tempfile.mkdtemp(prefix="jithu-raw-")
         self.proc = subprocess.Popen(
             [binary, f"--remote-debugging-port={self.port}", f"--user-data-dir={self.profile}", "--no-first-run",
              "--no-default-browser-check", "--no-sandbox", "--disable-gpu", "--window-size=1100,800",
-             "--window-position=60,60", "about:blank"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+             "--window-position=60,60", *extra_args, "about:blank"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         ver = self._wait(lambda: self.http("/json/version"), 30)
         assert ver, "browser did not start"
         self.browser = Cdp(ver["webSocketDebuggerUrl"])
@@ -449,9 +449,16 @@ def test_silent_fullscreen_exit_keeps_the_window_usable(raw):
 # --------------------------------------------------------------------------------
 
 @pytest.fixture(scope="session")
-def playwright_browser():
-    _require_browser()
+def pw():
     with sync_playwright() as p:
+        yield p
+
+
+@pytest.fixture(scope="session")
+def playwright_browser(pw):
+    _require_browser()
+    if True:
+        p = pw
         if os.environ.get("JITHU_CDP_ONLY"):
             # Browsers started through a wrapper (e.g. a Windows build under Wine) cannot use
             # Playwright's pipe transport; attach over the DevTools port instead.
@@ -618,3 +625,25 @@ def test_offline_audio_render_is_not_bit_exact(page, server):
       return n;
     }""")
     assert off > 0                            # stock Chrome renders exactly 1.0 everywhere
+
+
+def test_per_site_setting_turns_protections_off_for_that_site_only(server, pw):
+    # A second browser started with the unprotected-sites switch: history.length is no longer
+    # clamped on that site (127.0.0.1), proving the per-site switch reaches the renderer, while
+    # another host (localhost) in the same browser stays protected.
+    _require_browser()
+    rb = RawBrowser(BROWSER, ["--jithubrowser-unprotected-sites=127.0.0.1"])
+    try:
+        ctx = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{rb.port}").contexts[0]
+        pg = ctx.new_page()
+        for i in range(6):
+            pg.goto(f"{server}/s{i}")
+        unprotected = pg.evaluate("history.length")
+        other = ctx.new_page()
+        for i in range(6):
+            other.goto(f"http://localhost:{server.rsplit(':', 1)[1]}/o{i}")
+        protected = other.evaluate("history.length")
+    finally:
+        rb.quit()
+    assert unprotected > 2, unprotected
+    assert protected <= 2, protected

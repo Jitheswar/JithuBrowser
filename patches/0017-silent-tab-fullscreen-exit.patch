@@ -40,7 +40,7 @@ index 03c1ff341c..2c8133cf70 100644
    // Called by Browser::ActiveTabChanged.
    void OnTabDetachedFromView(content::WebContents* web_contents);
 diff --git a/chrome/browser/ui/exclusive_access/fullscreen_controller.cc b/chrome/browser/ui/exclusive_access/fullscreen_controller.cc
-index 1e0d665024..56cbec38f5 100644
+index 1e0d665024..c1eca030b2 100644
 --- a/chrome/browser/ui/exclusive_access/fullscreen_controller.cc
 +++ b/chrome/browser/ui/exclusive_access/fullscreen_controller.cc
 @@ -39,6 +39,7 @@
@@ -91,13 +91,12 @@ index 1e0d665024..56cbec38f5 100644
    if (MaybeToggleFullscreenWithinTab(web_contents, false)) {
      // During tab capture of fullscreen-within-tab views, the browser window
      // fullscreen state is unchanged, so return now.
-@@ -342,6 +362,48 @@ void FullscreenController::FullscreenTabOpeningPopup(
+@@ -342,6 +362,47 @@ void FullscreenController::FullscreenTabOpeningPopup(
  }
  #endif  // !BUILDFLAG(IS_ANDROID)
  
 +void FullscreenController::OnTabDeactivated(WebContents* web_contents) {
-+  if (base::FeatureList::IsEnabled(
-+          jithubrowser::features::kJithuBrowserSilentTabFullscreenExit) &&
++  if (jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserSilentTabFullscreenExit) &&
 +      web_contents == exclusive_access_tab() && tab_fullscreen_ &&
 +      IsFullscreenCausedByTab() && !IsFullscreenWithinTab(web_contents) &&
 +      !IsRunningInAppMode()) {
@@ -140,7 +139,7 @@ index 1e0d665024..56cbec38f5 100644
  void FullscreenController::OnTabDetachedFromView(WebContents* old_contents) {
    if (!IsFullscreenWithinTab(old_contents)) {
      return;
-@@ -373,6 +435,10 @@ void FullscreenController::OnTabDetachedFromView(WebContents* old_contents) {
+@@ -373,6 +434,10 @@ void FullscreenController::OnTabDetachedFromView(WebContents* old_contents) {
  }
  
  void FullscreenController::OnTabClosing(WebContents* web_contents) {
@@ -151,7 +150,7 @@ index 1e0d665024..56cbec38f5 100644
    if (IsFullscreenWithinTab(web_contents)) {
      web_contents->ExitFullscreen(
          /* will_cause_resize */ IsFullscreenCausedByTab());
-@@ -532,7 +598,13 @@ void FullscreenController::NotifyTabExclusiveAccessLost() {
+@@ -532,7 +597,13 @@ void FullscreenController::NotifyTabExclusiveAccessLost() {
      bool will_cause_resize = IsFullscreenCausedByTab();
      state_prior_to_tab_fullscreen_ = STATE_INVALID;
      tab_fullscreen_ = false;

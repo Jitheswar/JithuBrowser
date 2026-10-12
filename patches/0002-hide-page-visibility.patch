@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/core/dom/document.cc b/third_party/blink/renderer/core/dom/document.cc
-index c72f2ef4c4..15f1caa3f4 100644
+index c72f2ef4c4..db61addeea 100644
 --- a/third_party/blink/renderer/core/dom/document.cc
 +++ b/third_party/blink/renderer/core/dom/document.cc
 @@ -82,6 +82,7 @@
@@ -24,7 +24,7 @@ index c72f2ef4c4..15f1caa3f4 100644
  }
  
 +bool Document::HiddenForScript() const {
-+  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility)) {
++  if (jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideVisibility)) {
 +    // JithuBrowser: script never learns about tab switches or minimising.
 +    // Only report "hidden" while the document is really going away. Blink's
 +    // own code keeps using hidden()/IsPageVisible(), which stay truthful.
@@ -35,7 +35,7 @@ index c72f2ef4c4..15f1caa3f4 100644
 +}
 +
  bool Document::wasDiscarded() const {
-+  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility)) {
++  if (jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideVisibility)) {
 +    return false;
 +  }
    return was_discarded_;
@@ -49,7 +49,7 @@ index c72f2ef4c4..15f1caa3f4 100644
 -  // Also send out the deprecated version until it can be removed.
 -  DispatchEvent(
 -      *Event::CreateBubble(event_type_names::kWebkitvisibilitychange));
-+  if (!base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility)) {
++  if (!jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideVisibility)) {
 +    DispatchEvent(*Event::CreateBubble(event_type_names::kVisibilitychange));
 +    // Also send out the deprecated version until it can be removed.
 +    DispatchEvent(
@@ -65,7 +65,7 @@ index c72f2ef4c4..15f1caa3f4 100644
 -  if (page_visible) {
 +  // JithuBrowser: script was never told the page became hidden, so always give
 +  // it the final visibilitychange on unload (lets sites save state).
-+  if (page_visible || base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility)) {
++  if (page_visible || jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideVisibility)) {
      // Dispatch visibilitychange event, but don't bother doing
      // other notifications as we're about to be unloaded.
      DispatchEvent(*Event::CreateBubble(event_type_names::kVisibilitychange));
@@ -74,7 +74,7 @@ index c72f2ef4c4..15f1caa3f4 100644
  void Document::DispatchFreezeEvent() {
    SetFreezingInProgress(true);
 -  DispatchEvent(*Event::Create(event_type_names::kFreeze));
-+  if (!base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility)) {
++  if (!jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideVisibility)) {
 +    DispatchEvent(*Event::Create(event_type_names::kFreeze));
 +  }
    SetFreezingInProgress(false);
@@ -116,7 +116,7 @@ index e2edfd0db8..4800bfc5e8 100644
      // Private Token API (https://github.com/wicg/trust-token-api)
      [CallWith=ScriptState, Measure, RaisesException, NewObject, SecureContext, RuntimeEnabled=PrivateStateTokens] Promise<boolean> hasPrivateToken(USVString issuer);
 diff --git a/third_party/blink/renderer/core/frame/local_frame.cc b/third_party/blink/renderer/core/frame/local_frame.cc
-index 3960cc4f1f..2bd691bb36 100644
+index 3960cc4f1f..05c350fe20 100644
 --- a/third_party/blink/renderer/core/frame/local_frame.cc
 +++ b/third_party/blink/renderer/core/frame/local_frame.cc
 @@ -91,6 +91,7 @@
@@ -132,14 +132,14 @@ index 3960cc4f1f..2bd691bb36 100644
    DCHECK_NE(DomWindow()->ContextPauseState(),
              mojom::blink::FrameLifecycleState::kFrozen);
 -  GetDocument()->DispatchEvent(*Event::Create(event_type_names::kResume));
-+  if (!base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility)) {
++  if (!jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideVisibility)) {
 +    GetDocument()->DispatchEvent(*Event::Create(event_type_names::kResume));
 +  }
    // TODO(fmeawad): Move the following logic to the page once we have a
    // PageResourceCoordinator in Blink
    if (auto* document_resource_coordinator =
 diff --git a/third_party/blink/renderer/core/timing/window_performance.cc b/third_party/blink/renderer/core/timing/window_performance.cc
-index 4d099fc3c7..ed0f1decfc 100644
+index 4d099fc3c7..2676a3bffc 100644
 --- a/third_party/blink/renderer/core/timing/window_performance.cc
 +++ b/third_party/blink/renderer/core/timing/window_performance.cc
 @@ -53,6 +53,7 @@
@@ -155,7 +155,7 @@ index 4d099fc3c7..ed0f1decfc 100644
  
    DCHECK(GetPage());
 -  AddVisibilityStateEntry(GetPage()->IsPageVisible(), base::TimeTicks());
-+  AddVisibilityStateEntry(GetPage()->IsPageVisible() || base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility),
++  AddVisibilityStateEntry(GetPage()->IsPageVisible() || jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideVisibility),
 +                          base::TimeTicks());
  }
  
@@ -164,14 +164,14 @@ index 4d099fc3c7..ed0f1decfc 100644
      // becomes hidden, to ensure they are not lost if the page is discarded.
      FlushPerformanceEntries();
    }
-+  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility)) {
++  if (jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideVisibility)) {
 +    return;  // JithuBrowser: no visibility-state timeline entries.
 +  }
    AddVisibilityStateEntry(GetPage()->IsPageVisible(),
                            visibility_change_timestamp);
  }
 diff --git a/content/browser/service_worker/service_worker_client_utils.cc b/content/browser/service_worker/service_worker_client_utils.cc
-index 25e4ecab59..7574a9a88a 100644
+index 25e4ecab59..5d0b703ff5 100644
 --- a/content/browser/service_worker/service_worker_client_utils.cc
 +++ b/content/browser/service_worker/service_worker_client_utils.cc
 @@ -50,6 +50,7 @@
@@ -188,8 +188,8 @@ index 25e4ecab59..7574a9a88a 100644
    bool page_hidden = visibility != PageVisibilityState::kVisible;
 +  // JithuBrowser: clients.matchAll() must not reveal which tabs are hidden,
 +  // frozen or focused, nor the order in which the user focused them.
-+  const bool hide_visibility = base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideVisibility);
-+  const bool hide_focus = base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideFocus);
++  const bool hide_visibility = jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideVisibility);
++  const bool hide_focus = jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideFocus);
 +  if (hide_visibility) {
 +    page_hidden = false;
 +  }

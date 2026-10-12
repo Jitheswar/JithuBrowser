@@ -1,5 +1,5 @@
 diff --git a/content/browser/web_contents/web_contents_impl.cc b/content/browser/web_contents/web_contents_impl.cc
-index 6d6d0947fa..2458d13c48 100644
+index 6d6d0947fa..ed79dd1207 100644
 --- a/content/browser/web_contents/web_contents_impl.cc
 +++ b/content/browser/web_contents/web_contents_impl.cc
 @@ -202,6 +202,7 @@
@@ -10,7 +10,7 @@ index 6d6d0947fa..2458d13c48 100644
  #include "third_party/blink/public/common/loader/resource_type_util.h"
  #include "third_party/blink/public/common/mime_util/mime_util.h"
  #include "third_party/blink/public/common/page/content_to_visible_time_request.h"
-@@ -5169,6 +5170,20 @@ void WebContentsImpl::FullscreenFrameSetUpdated() {
+@@ -5169,6 +5170,19 @@ void WebContentsImpl::FullscreenFrameSetUpdated() {
    }
  }
  
@@ -20,8 +20,7 @@ index 6d6d0947fa..2458d13c48 100644
 +namespace {
 +PageVisibilityState JithuBrowserRendererPageVisibility(PageVisibilityState real) {
 +  if (real == PageVisibilityState::kHidden &&
-+      base::FeatureList::IsEnabled(
-+          jithubrowser::features::kJithuBrowserKeepHiddenTabsActive)) {
++      jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserKeepHiddenTabsActive)) {
 +    return PageVisibilityState::kHiddenButPainting;
 +  }
 +  return real;
@@ -31,7 +30,7 @@ index 6d6d0947fa..2458d13c48 100644
  PageVisibilityState WebContentsImpl::CalculatePageVisibilityState(
      Visibility visibility) const {
    // Only hide the page if there are no entities capturing screenshots
-@@ -5218,6 +5233,8 @@ void WebContentsImpl::UpdateVisibilityAndNotifyPageAndView(
+@@ -5218,6 +5232,8 @@ void WebContentsImpl::UpdateVisibilityAndNotifyPageAndView(
  
    PageVisibilityState page_visibility =
        CalculatePageVisibilityState(new_visibility);
@@ -40,7 +39,7 @@ index 6d6d0947fa..2458d13c48 100644
  
    TRACE_EVENT1("content",
                 "WebContentsImpl::UpdateVisibilityAndNotifyPageAndView",
-@@ -5253,7 +5270,13 @@ void WebContentsImpl::UpdateVisibilityAndNotifyPageAndView(
+@@ -5253,7 +5269,13 @@ void WebContentsImpl::UpdateVisibilityAndNotifyPageAndView(
    RenderViewHostIterationCallback update_frame_tree_visibility =
        base::BindRepeating(
            [](PageVisibilityState page_visibility,
@@ -54,7 +53,7 @@ index 6d6d0947fa..2458d13c48 100644
              // If we are a guest frame tree, allow the visibility (ie
              // display:none) to override the page visibility.
              if (render_view_host->frame_tree()->is_guest()) {
-@@ -5268,9 +5291,9 @@ void WebContentsImpl::UpdateVisibilityAndNotifyPageAndView(
+@@ -5268,9 +5290,9 @@ void WebContentsImpl::UpdateVisibilityAndNotifyPageAndView(
  
              render_view_host->SetFrameTreeVisibility(page_visibility);
            },
@@ -66,7 +65,7 @@ index 6d6d0947fa..2458d13c48 100644
      // This shows the Page before showing the individual RenderWidgets, as
      // RenderWidgets will work to produce compositor frames and handle input
      // as soon as they are shown. But the Page and other classes do not expect
-@@ -5281,7 +5304,7 @@ void WebContentsImpl::UpdateVisibilityAndNotifyPageAndView(
+@@ -5281,7 +5303,7 @@ void WebContentsImpl::UpdateVisibilityAndNotifyPageAndView(
  
    SetPrimaryMainFrameViewVisibility(new_visibility);
  
@@ -75,7 +74,7 @@ index 6d6d0947fa..2458d13c48 100644
      // Similar to when showing the page, we only hide the page after
      // hiding the individual RenderWidgets.
      ForEachRenderViewHost(view_mask, update_frame_tree_visibility);
-@@ -5341,8 +5364,8 @@ void WebContentsImpl::UpdateVisibilityAndNotifyPageAndView(
+@@ -5341,8 +5363,8 @@ void WebContentsImpl::UpdateVisibilityAndNotifyPageAndView(
  }
  
  void WebContentsImpl::SetPrimaryMainFrameViewVisibility(Visibility visibility) {
@@ -86,7 +85,7 @@ index 6d6d0947fa..2458d13c48 100644
  
    // A crashed frame might be covered by a sad tab. See docs on SadTabHelper
    // exactly when it is or isn't. Either way, don't make it visible.
-@@ -11532,6 +11555,9 @@ bool WebContentsImpl::CreateRenderViewForRenderManager(
+@@ -11532,6 +11554,9 @@ bool WebContentsImpl::CreateRenderViewForRenderManager(
    // represent `kHiddenButPainting`. Set the full visibility state explicitly.
    if (!did_first_set_visible_ && initially_hidden_but_painting_) {
      rvh_impl->SetFrameTreeVisibility(PageVisibilityState::kHiddenButPainting);

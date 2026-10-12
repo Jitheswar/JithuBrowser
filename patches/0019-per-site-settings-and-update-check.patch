@@ -1,0 +1,545 @@
+diff --git a/chrome/app/chrome_command_ids.h b/chrome/app/chrome_command_ids.h
+index 67f37eafaa..d5e0a6a387 100644
+--- a/chrome/app/chrome_command_ids.h
++++ b/chrome/app/chrome_command_ids.h
+@@ -283,6 +283,7 @@
+ #define IDC_SHOW_HISTORY_SIDE_PANEL     40293
+ #define IDC_OPEN_GLIC                   40294
+ #define IDC_FIND_EXTENSIONS  40295
++#define IDC_JITHU_TOGGLE_SITE_PROTECTION 40399
+ #define IDC_SHOW_SEARCH_TOOLS  40296
+ #define IDC_SHOW_COMMENTS_SIDE_PANEL  40297
+ #define IDC_RECENT_TABS_SEE_DEVICE_TABS  40298
+diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
+index 2653e37bec..8b5d336f8b 100644
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "chrome/browser/prefs/browser_prefs.h"
+ 
++#include "chrome/browser/ui/tab_helpers.h"
++
+ #include <array>
+ #include <optional>
+ #include <string>
+@@ -1748,6 +1750,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
+   TRACE_EVENT0("browser", "chrome::RegisterProfilePrefs");
+   // User prefs. Please keep this list alphabetized.
+   AccessibilityLabelsService::RegisterProfilePrefs(registry);
++  jithubrowser::RegisterSiteSettingsPrefs(registry);
+   registry->RegisterBooleanPref(prefs::kRendererAccessibilityEnabled, true);
+   AccessibilityUIMessageHandler::RegisterProfilePrefs(registry);
+ #if !BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_DESKTOP_ANDROID)  // nocheck
+diff --git a/chrome/browser/ui/tab_helpers.cc b/chrome/browser/ui/tab_helpers.cc
+index 3b1e2e30ef..df6770c2ce 100644
+--- a/chrome/browser/ui/tab_helpers.cc
++++ b/chrome/browser/ui/tab_helpers.cc
+@@ -4,6 +4,41 @@
+ 
+ #include "chrome/browser/ui/tab_helpers.h"
+ 
++#include "base/command_line.h"
++#include "base/strings/string_split.h"
++#include "base/values.h"
++#include "chrome/browser/profiles/profile.h"
++#include "components/prefs/pref_registry_simple.h"
++#include "components/prefs/pref_service.h"
++#include "components/prefs/scoped_user_pref_update.h"
++#include "content/public/browser/navigation_handle.h"
++#include "content/public/browser/web_contents_observer.h"
++#include "content/public/browser/web_contents_user_data.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
++#include "third_party/blink/public/common/renderer_preferences/renderer_preferences.h"
++#include "url/gurl.h"
++
++#include "base/functional/bind.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/task/single_thread_task_runner.h"
++#include "base/time/time.h"
++#include "chrome/browser/browser_process.h"
++#include "chrome/browser/infobars/confirm_infobar_creator.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
++#include "chrome/browser/ui/browser_tabstrip.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "components/infobars/content/content_infobar_manager.h"
++#include "components/infobars/core/confirm_infobar_delegate.h"
++#include "components/infobars/core/infobar.h"
++#include "components/version_info/version_info.h"
++#include "net/traffic_annotation/network_traffic_annotation.h"
++#include "services/network/public/cpp/resource_request.h"
++#include "services/network/public/cpp/shared_url_loader_factory.h"
++#include "services/network/public/cpp/simple_url_loader.h"
++#include "ui/base/page_transition_types.h"
++
+ #include <cstdint>
+ #include <memory>
+ #include <optional>
+@@ -284,6 +319,286 @@
+ 
+ using content::WebContents;
+ 
++namespace jithubrowser {
++namespace {
++constexpr char kUnprotectedSitesPref[] = "jithubrowser.unprotected_sites";
++constexpr char kUnprotectedSitesSwitch[] = "jithubrowser-unprotected-sites";
++
++bool HostMatches(const std::string& host, const std::string& entry) {
++  if (entry.empty()) {
++    return false;
++  }
++  return host == entry ||
++         (host.size() > entry.size() + 1 &&
++          host.compare(host.size() - entry.size(), entry.size(), entry) == 0 &&
++          host[host.size() - entry.size() - 1] == '.');
++}
++
++bool IsUnprotected(PrefService* prefs, const GURL& url) {
++  if (!url.is_valid() || url.host().empty() ||
++      !base::FeatureList::IsEnabled(
++          jithubrowser::features::kJithuBrowserSiteSettings)) {
++    return false;
++  }
++  const std::string host(url.host());
++  for (const auto& entry : prefs->GetList(kUnprotectedSitesPref)) {
++    if (entry.is_string() && HostMatches(host, entry.GetString())) {
++      return true;
++    }
++  }
++  const std::string flag =
++      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++          kUnprotectedSitesSwitch);
++  for (const auto& entry : base::SplitString(
++           flag, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY)) {
++    if (HostMatches(host, entry)) {
++      return true;
++    }
++  }
++  return false;
++}
++
++// Tells the renderer whether protections apply to the site being loaded.
++class SiteSettingsTabHelper
++    : public content::WebContentsObserver,
++      public content::WebContentsUserData<SiteSettingsTabHelper> {
++ public:
++  ~SiteSettingsTabHelper() override = default;
++
++  void Update(const GURL& url) {
++    Profile* profile =
++        Profile::FromBrowserContext(web_contents()->GetBrowserContext());
++    const bool off = IsUnprotected(profile->GetPrefs(), url);
++    auto* prefs = web_contents()->GetMutableRendererPrefs();
++    if (prefs->jithu_protections_off != off) {
++      prefs->jithu_protections_off = off;
++      web_contents()->SyncRendererPrefs();
++    }
++  }
++
++  void DidStartNavigation(content::NavigationHandle* handle) override {
++    if (handle->IsInPrimaryMainFrame() && !handle->IsSameDocument()) {
++      Update(handle->GetURL());
++    }
++  }
++
++ private:
++  friend class content::WebContentsUserData<SiteSettingsTabHelper>;
++  explicit SiteSettingsTabHelper(content::WebContents* web_contents)
++      : content::WebContentsObserver(web_contents),
++        content::WebContentsUserData<SiteSettingsTabHelper>(*web_contents) {}
++  WEB_CONTENTS_USER_DATA_KEY_DECL();
++};
++WEB_CONTENTS_USER_DATA_KEY_IMPL(SiteSettingsTabHelper);
++}  // namespace
++
++void RegisterSiteSettingsPrefs(PrefRegistrySimple* registry) {
++  registry->RegisterListPref(kUnprotectedSitesPref);
++}
++
++bool IsSiteProtected(content::WebContents* web_contents) {
++  Profile* profile = Profile::FromBrowserContext(web_contents->GetBrowserContext());
++  return !IsUnprotected(profile->GetPrefs(), web_contents->GetLastCommittedURL());
++}
++
++void ToggleSiteProtection(content::WebContents* web_contents) {
++  const GURL url = web_contents->GetLastCommittedURL();
++  if (!url.is_valid() || url.host().empty()) {
++    return;
++  }
++  Profile* profile = Profile::FromBrowserContext(web_contents->GetBrowserContext());
++  const std::string host(url.host());
++  ScopedListPrefUpdate update(profile->GetPrefs(), kUnprotectedSitesPref);
++  auto& list = update.Get();
++  bool removed = false;
++  for (auto it = list.begin(); it != list.end();) {
++    if (it->is_string() && HostMatches(host, it->GetString())) {
++      it = list.erase(it);
++      removed = true;
++    } else {
++      ++it;
++    }
++  }
++  if (!removed) {
++    list.Append(host);
++  }
++  if (auto* helper = SiteSettingsTabHelper::FromWebContents(web_contents)) {
++    helper->Update(url);
++  }
++}
++
++// ---- Update notification (never installs anything by itself) --------------
++namespace {
++constexpr char kReleasesApi[] =
++    "https://api.github.com/repos/Jitheswar/JithuBrowser/releases?per_page=1";
++constexpr char kReleasesPage[] =
++    "https://github.com/Jitheswar/JithuBrowser/releases";
++
++std::vector<int> ParseVersion(const std::string& v) {
++  std::vector<int> out;
++  for (const auto& part : base::SplitString(v, ".", base::TRIM_WHITESPACE,
++                                            base::SPLIT_WANT_NONEMPTY)) {
++    int n = 0;
++    if (!base::StringToInt(part, &n)) {
++      return {};
++    }
++    out.push_back(n);
++  }
++  return out;
++}
++
++class UpdateInfoBarDelegate : public ConfirmInfoBarDelegate {
++ public:
++  explicit UpdateInfoBarDelegate(std::string version)
++      : version_(std::move(version)) {}
++  infobars::InfoBarDelegate::InfoBarIdentifier GetIdentifier() const override {
++    return JITHUBROWSER_UPDATE_INFOBAR_DELEGATE;
++  }
++  std::u16string GetMessageText() const override {
++    return u"A new JithuBrowser release (" + base::UTF8ToUTF16(version_) +
++           u") is available.";
++  }
++  int GetButtons() const override { return BUTTON_OK | BUTTON_CANCEL; }
++  std::u16string GetButtonLabel(InfoBarButton button) const override {
++    return button == BUTTON_OK ? u"Open download page" : u"Later";
++  }
++  bool Accept() override {
++    if (BrowserWindowInterface* browser =
++            GetLastActiveBrowserWindowInterfaceWithAnyProfile()) {
++      chrome::AddSelectedTabWithURL(browser, GURL(kReleasesPage),
++                                    ui::PAGE_TRANSITION_LINK);
++    }
++    return true;
++  }
++
++ private:
++  std::string version_;
++};
++
++// --jithubrowser-test-revision=N pretends to be release N (used to test the update bar).
++std::optional<int> TestRevisionOverride() {
++  int n = 0;
++  if (base::StringToInt(base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++          "jithubrowser-test-revision"), &n)) {
++    return n;
++  }
++  return std::nullopt;
++}
++
++class UpdateChecker {
++ public:
++  // Test and automation setups must not phone home.
++  static bool IsAutomated() {
++    const base::CommandLine* cl = base::CommandLine::ForCurrentProcess();
++    return cl->HasSwitch("remote-debugging-port") ||
++           cl->HasSwitch("remote-debugging-pipe") ||
++           cl->HasSwitch("enable-automation");
++  }
++
++  static void ScheduleOnce() {
++    VLOG(1) << "jithu update: ScheduleOnce";
++    static bool scheduled = false;
++    if (scheduled ||
++        !jithubrowser::features::IsOn(
++            jithubrowser::features::kJithuBrowserUpdateCheck) ||
++        IsAutomated()) {
++      return;
++    }
++    scheduled = true;
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
++        FROM_HERE, base::BindOnce([] { (new UpdateChecker)->Start(); }),
++        base::Seconds(30));
++  }
++
++ private:
++  void Start() {
++    VLOG(1) << "jithu update: requesting releases";
++    auto request = std::make_unique<network::ResourceRequest>();
++    request->url = GURL(kReleasesApi);
++    request->credentials_mode = network::mojom::CredentialsMode::kOmit;
++    request->headers.SetHeader("Accept", "application/vnd.github+json");
++    net::NetworkTrafficAnnotationTag tag = net::DefineNetworkTrafficAnnotation(
++        "jithubrowser_update_check", R"(
++        semantics {
++          sender: "JithuBrowser update check"
++          description:
++            "Asks GitHub for the newest JithuBrowser release so the browser "
++            "can tell the user that an update exists. Nothing is installed."
++          trigger: "Once, 30 seconds after the browser starts."
++          data: "None beyond a normal HTTPS request (no cookies)."
++          destination: OTHER
++        }
++        policy {
++          cookies_allowed: NO
++          setting: "Start with --disable-features=JithuBrowserUpdateCheck."
++          policy_exception_justification: "Not implemented."
++        })");
++    loader_ = network::SimpleURLLoader::Create(std::move(request), tag);
++    loader_->DownloadToString(
++        g_browser_process->shared_url_loader_factory().get(),
++        base::BindOnce(&UpdateChecker::Done, base::Unretained(this)),
++        256 * 1024);
++  }
++
++  void Done(std::optional<std::string> body) {
++    VLOG(1) << "jithu update: response " << (body ? body->size() : 0) << " bytes";
++    std::string tag;
++    if (body) {
++      const size_t key = body->find("\"tag_name\"");
++      const size_t q1 = key == std::string::npos
++                            ? std::string::npos
++                            : body->find('"', body->find(':', key) + 1);
++      const size_t q2 =
++          q1 == std::string::npos ? std::string::npos : body->find('"', q1 + 1);
++      if (q2 != std::string::npos) {
++        tag = body->substr(q1 + 1, q2 - q1 - 1);
++      }
++    }
++    if (!tag.empty() && tag[0] == 'v') {
++      tag.erase(0, 1);
++    }
++    std::vector<int> latest = ParseVersion(tag);
++    std::vector<int> current = ParseVersion(
++        std::string(version_info::GetVersionNumber()) + "." +
++        base::NumberToString(TestRevisionOverride().value_or(
++            jithubrowser::features::kJithuBrowserRevision)));
++    VLOG(1) << "jithu update: latest=" << tag << " newer=" << (latest > current);
++    if (!latest.empty() && !current.empty() && latest > current) {
++      // Prefer the focused window, otherwise any open one.
++      BrowserWindowInterface* browser =
++          GetLastActiveBrowserWindowInterfaceWithAnyProfile();
++      if (!browser) {
++        auto all = GetAllBrowserWindowInterfaces();
++        if (!all.empty()) {
++          browser = all.front();
++        }
++      }
++      if (browser) {
++        if (auto* contents = browser->GetTabStripModel()->GetActiveWebContents()) {
++          if (auto* manager =
++                  infobars::ContentInfoBarManager::FromWebContents(contents)) {
++            manager->AddInfoBar(CreateConfirmInfoBar(
++                std::make_unique<UpdateInfoBarDelegate>(tag)));
++            VLOG(1) << "jithu update: infobar added";
++          }
++        }
++      } else {
++        VLOG(1) << "jithu update: no browser window";
++      }
++    }
++    delete this;
++  }
++
++  std::unique_ptr<network::SimpleURLLoader> loader_;
++};
++}  // namespace
++
++void AttachSiteSettings(content::WebContents* web_contents) {
++  SiteSettingsTabHelper::CreateForWebContents(web_contents);
++  UpdateChecker::ScheduleOnce();
++}
++}  // namespace jithubrowser
++
+ namespace {
+ 
+ const char kTabContentsAttachedTabHelpersUserDataKey[] =
+@@ -331,6 +646,7 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
+ 
+   // ZoomController comes before common tab helpers since ChromeAutofillClient
+   // may want to register as a ZoomObserver with it.
++  jithubrowser::AttachSiteSettings(web_contents);
+   zoom::ZoomController::CreateForWebContents(web_contents);
+ 
+   // infobars::ContentInfoBarManager comes before common tab helpers since
+diff --git a/chrome/browser/ui/tab_helpers.h b/chrome/browser/ui/tab_helpers.h
+index c6e05eb620..233d1e8f00 100644
+--- a/chrome/browser/ui/tab_helpers.h
++++ b/chrome/browser/ui/tab_helpers.h
+@@ -91,4 +91,20 @@ class TabHelpers {
+                                bool enable_browser_autofill = true);
+ };
+ 
++// JithuBrowser per-site settings. The user can turn the privacy protections
++// off for a site (app menu); the list lives in the profile prefs. The pref and
++// the --jithubrowser-unprotected-sites=a.com,b.com switch are both honoured;
++// an entry also covers its subdomains.
++class PrefRegistrySimple;
++namespace content {
++class WebContents;
++}
++namespace jithubrowser {
++void RegisterSiteSettingsPrefs(PrefRegistrySimple* registry);
++// True when protections are active for the tab's current site.
++bool IsSiteProtected(content::WebContents* web_contents);
++void ToggleSiteProtection(content::WebContents* web_contents);
++void AttachSiteSettings(content::WebContents* web_contents);
++}  // namespace jithubrowser
++
+ #endif  // CHROME_BROWSER_UI_TAB_HELPERS_H_
+diff --git a/chrome/browser/ui/toolbar/app_menu_model.cc b/chrome/browser/ui/toolbar/app_menu_model.cc
+index f8f6a64f35..a16b0cbc48 100644
+--- a/chrome/browser/ui/toolbar/app_menu_model.cc
++++ b/chrome/browser/ui/toolbar/app_menu_model.cc
+@@ -36,6 +36,7 @@
+ #include "chrome/browser/glic/resources/grit/glic_browser_resources.h"
+ #include "chrome/browser/media/router/media_router_feature.h"
+ #include "chrome/browser/prefs/incognito_mode_prefs.h"
++#include "chrome/browser/ui/tab_helpers.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/profiles/profile_attributes_entry.h"
+ #include "chrome/browser/profiles/profile_attributes_storage.h"
+@@ -1242,6 +1243,12 @@ bool AppMenuModel::DoesCommandIdDismissMenu(int command_id) const {
+ }
+ 
+ void AppMenuModel::ExecuteCommand(int command_id, int event_flags) {
++  if (command_id == IDC_JITHU_TOGGLE_SITE_PROTECTION) {
++    if (auto* contents = browser_->GetTabStripModel()->GetActiveWebContents()) {
++      jithubrowser::ToggleSiteProtection(contents);
++    }
++    return;
++  }
+   GlobalError* error =
+       GlobalErrorServiceFactory::GetForProfile(browser_->GetProfile())
+           ->GetGlobalErrorByMenuItemCommandID(command_id);
+@@ -1956,6 +1963,10 @@ void AppMenuModel::LogMenuMetrics(int command_id) {
+ }
+ 
+ bool AppMenuModel::IsCommandIdChecked(int command_id) const {
++  if (command_id == IDC_JITHU_TOGGLE_SITE_PROTECTION) {
++    auto* contents = browser_->GetTabStripModel()->GetActiveWebContents();
++    return !contents || jithubrowser::IsSiteProtected(contents);
++  }
+   PrefService* prefs = browser_->GetProfile()->GetPrefs();
+   if (command_id == IDC_SHOW_BOOKMARK_BAR) {
+     return prefs->GetBoolean(bookmarks::prefs::kShowBookmarkBar);
+@@ -1994,6 +2005,8 @@ bool AppMenuModel::IsCommandIdEnabled(int command_id) const {
+   switch (command_id) {
+     case IDC_NEW_INCOGNITO_WINDOW:
+       return IncognitoModePrefs::IsIncognitoAllowed(browser_->GetProfile());
++    case IDC_JITHU_TOGGLE_SITE_PROTECTION:
++      return true;
+     default:
+       return chrome::IsCommandEnabled(browser_, command_id);
+   }
+@@ -2333,6 +2346,10 @@ void AppMenuModel::Build() {
+       this, IDC_OPTIONS, IDS_SETTINGS,
+       features::IsRoundedIconsEnabled() ? kSettingsIcon : kSettingsMenuOldIcon);
+ 
++  // JithuBrowser: per-site privacy protections.
++  AddCheckItem(IDC_JITHU_TOGGLE_SITE_PROTECTION,
++               u"JithuBrowser protections for this site");
++
+   if (browser_defaults::kShowExitMenuItem) {
+     AddItemWithStringIdAndVectorIcon(
+         this, IDC_EXIT, IDS_EXIT,
+diff --git a/components/infobars/core/infobar_delegate.h b/components/infobars/core/infobar_delegate.h
+index 533b73080f..6a269f17a3 100644
+--- a/components/infobars/core/infobar_delegate.h
++++ b/components/infobars/core/infobar_delegate.h
+@@ -212,6 +212,8 @@ class InfoBarDelegate {
+     SIGNIN_QRCODE_INFOBAR_DELEGATE = 137,
+     FORMS_AI_PRIVATE_INFERENCE_INFOBAR_DELEGATE_IOS = 138,
+     PASSWORD_SAVED_INFOBAR_DELEGATE_IOS = 139,
++    // JithuBrowser
++    JITHUBROWSER_UPDATE_INFOBAR_DELEGATE = 900,
+   };
+   // LINT.ThenChange(//tools/metrics/histograms/metadata/browser/enums.xml:InfoBarIdentifier)
+ 
+diff --git a/third_party/blink/common/renderer_preferences/renderer_preferences_mojom_traits.cc b/third_party/blink/common/renderer_preferences/renderer_preferences_mojom_traits.cc
+index 1401e99cb9..32a071b4f2 100644
+--- a/third_party/blink/common/renderer_preferences/renderer_preferences_mojom_traits.cc
++++ b/third_party/blink/common/renderer_preferences/renderer_preferences_mojom_traits.cc
+@@ -114,6 +114,7 @@ bool StructTraits<blink::mojom::RendererPreferencesDataView,
+ #endif
+   out->plugin_fullscreen_allowed = data.plugin_fullscreen_allowed();
+   out->caret_browsing_enabled = data.caret_browsing_enabled();
++  out->jithu_protections_off = data.jithu_protections_off();
+ 
+ #if BUILDFLAG(IS_ANDROID)
+   out->uses_platform_autofill = data.uses_platform_autofill();
+diff --git a/third_party/blink/public/common/renderer_preferences/renderer_preferences.h b/third_party/blink/public/common/renderer_preferences/renderer_preferences.h
+index 336c8061e4..feabfdaebf 100644
+--- a/third_party/blink/public/common/renderer_preferences/renderer_preferences.h
++++ b/third_party/blink/public/common/renderer_preferences/renderer_preferences.h
+@@ -91,6 +91,7 @@ struct BLINK_COMMON_EXPORT RendererPreferences {
+ #endif
+   bool plugin_fullscreen_allowed{true};
+   bool caret_browsing_enabled{false};
++  bool jithu_protections_off{false};
+   bool uses_platform_autofill{false};
+   std::vector<uint16_t> explicitly_allowed_network_ports;
+   // The default value must be false to avoid performance problems on very large
+diff --git a/third_party/blink/public/common/renderer_preferences/renderer_preferences_mojom_traits.h b/third_party/blink/public/common/renderer_preferences/renderer_preferences_mojom_traits.h
+index d0279aa1ca..31968656d6 100644
+--- a/third_party/blink/public/common/renderer_preferences/renderer_preferences_mojom_traits.h
++++ b/third_party/blink/public/common/renderer_preferences/renderer_preferences_mojom_traits.h
+@@ -257,6 +257,11 @@ struct BLINK_COMMON_EXPORT
+     return data.caret_browsing_enabled;
+   }
+ 
++  static const bool& jithu_protections_off(
++      const ::blink::RendererPreferences& data) {
++    return data.jithu_protections_off;
++  }
++
+ #if BUILDFLAG(IS_ANDROID)
+   static const bool& uses_platform_autofill(
+       const ::blink::RendererPreferences& data) {
+diff --git a/third_party/blink/public/mojom/renderer_preferences.mojom b/third_party/blink/public/mojom/renderer_preferences.mojom
+index 026d009b9d..c2b668e755 100644
+--- a/third_party/blink/public/mojom/renderer_preferences.mojom
++++ b/third_party/blink/public/mojom/renderer_preferences.mojom
+@@ -139,6 +139,9 @@ struct RendererPreferences {
+   // Whether or not caret browsing is enabled.
+   bool caret_browsing_enabled = false;
+ 
++  // JithuBrowser: the user turned its privacy protections off for this tab's site.
++  bool jithu_protections_off = false;
++
+   [EnableIf=is_chromeos|is_linux]
+   string system_font_family_name;
+ 
+diff --git a/third_party/blink/renderer/core/exported/web_view_impl.cc b/third_party/blink/renderer/core/exported/web_view_impl.cc
+index 3433ff33cd..92e454424d 100644
+--- a/third_party/blink/renderer/core/exported/web_view_impl.cc
++++ b/third_party/blink/renderer/core/exported/web_view_impl.cc
+@@ -29,6 +29,8 @@
+  */
+ #include "third_party/blink/renderer/core/exported/web_view_impl.h"
+ 
++#include "third_party/blink/public/common/jithubrowser_features.h"
++
+ #include <algorithm>
+ #include <memory>
+ #include <utility>
+@@ -3803,6 +3805,9 @@ void WebViewImpl::UpdateRendererPreferences(
+     const RendererPreferences& preferences) {
+   std::string old_accept_languages = renderer_preferences_.accept_languages;
+   renderer_preferences_ = preferences;
++  // JithuBrowser: per-site settings.
++  jithubrowser::features::SetProtectionsSuspended(
++      preferences.jithu_protections_off);
+ 
+   if (GetPage()) {
+     GetPage()->SetRendererPreferences(preferences);

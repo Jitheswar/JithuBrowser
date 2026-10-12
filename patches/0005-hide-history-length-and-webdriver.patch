@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/core/frame/history.cc b/third_party/blink/renderer/core/frame/history.cc
-index 21e46895f8..6568725366 100644
+index 21e46895f8..bf4903444f 100644
 --- a/third_party/blink/renderer/core/frame/history.cc
 +++ b/third_party/blink/renderer/core/frame/history.cc
 @@ -30,6 +30,7 @@
@@ -16,7 +16,7 @@ index 21e46895f8..6568725366 100644
  
 -  return DomWindow()->GetFrame()->Client()->BackForwardLength();
 +  unsigned length = DomWindow()->GetFrame()->Client()->BackForwardLength();
-+  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideHistoryLength)) {
++  if (jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideHistoryLength)) {
 +    // JithuBrowser: only reveal whether there is anything to go back to,
 +    // not how many pages were visited in this tab.
 +    return std::min(length, 2u);
@@ -26,7 +26,7 @@ index 21e46895f8..6568725366 100644
  
  ScriptValue History::state(ScriptState* script_state,
 diff --git a/third_party/blink/renderer/core/frame/navigator.cc b/third_party/blink/renderer/core/frame/navigator.cc
-index 583f05f8dd..87f4a0ff62 100644
+index 583f05f8dd..943c6396f5 100644
 --- a/third_party/blink/renderer/core/frame/navigator.cc
 +++ b/third_party/blink/renderer/core/frame/navigator.cc
 @@ -34,6 +34,7 @@
@@ -41,7 +41,7 @@ index 583f05f8dd..87f4a0ff62 100644
  }
  
  bool Navigator::webdriver() const {
-+  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideAutomation)) {
++  if (jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserHideAutomation)) {
 +    return false;  // JithuBrowser: never advertise automation/remote control.
 +  }
    if (RuntimeEnabledFeatures::AutomationControlledEnabled())

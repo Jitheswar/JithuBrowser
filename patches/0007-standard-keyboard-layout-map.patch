@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/modules/keyboard/keyboard_layout.cc b/third_party/blink/renderer/modules/keyboard/keyboard_layout.cc
-index e2b697b768..4f65a35c41 100644
+index e2b697b768..d4faeaea20 100644
 --- a/third_party/blink/renderer/modules/keyboard/keyboard_layout.cc
 +++ b/third_party/blink/renderer/modules/keyboard/keyboard_layout.cc
 @@ -7,6 +7,7 @@
@@ -71,14 +71,13 @@ index e2b697b768..4f65a35c41 100644
  }
  
  KeyboardLayout::KeyboardLayout(ExecutionContext* context)
-@@ -93,8 +148,17 @@ void KeyboardLayout::GotKeyboardLayoutMap(
+@@ -93,8 +148,16 @@ void KeyboardLayout::GotKeyboardLayoutMap(
  
    switch (result->status) {
      case mojom::blink::GetKeyboardLayoutMapStatus::kSuccess:
 -      layout_map_property_->Resolve(
 -          MakeGarbageCollected<KeyboardLayoutMap>(result->layout_map));
-+      if (base::FeatureList::IsEnabled(
-+              jithubrowser::features::kJithuBrowserProtectKeyboard)) {
++      if (jithubrowser::features::IsOn(jithubrowser::features::kJithuBrowserProtectKeyboard)) {
 +        // JithuBrowser: always report a standard US QWERTY layout so the
 +        // user's physical layout/language cannot be used to fingerprint or
 +        // geolocate them. Denied/failed requests still reject as upstream.
