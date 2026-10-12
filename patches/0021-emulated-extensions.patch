@@ -1,0 +1,303 @@
+diff --git a/chrome/browser/resources/emulated_extensions/manifest.json b/chrome/browser/resources/emulated_extensions/manifest.json
+new file mode 100644
+index 0000000000..094619de60
+--- /dev/null
++++ b/chrome/browser/resources/emulated_extensions/manifest.json
+@@ -0,0 +1,14 @@
++{
++  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwzYiwTzdyq6PJ+sEF8ru78O+hfnQuhHRL8CLe8+uSNOXh9NMUjd0upXkFgo0eXlTglQkrET/IOPkTDt6r/Z9FNPFx/asSPJz7AZbWr29uQVLWkbDMU09gOHU9wPy3DYIYcdbwvn/Eltulla78oySrjr9y3G7QyXzPmzHLoaO6gXIo6vxXxYGt/oOvF+JrO53YnpcdhWPUymhmbBvrFK9JeMRV/FF2hdoAMdeQ5VEoXT2ItVpN3S9WjOtHA+I45bUK9xvRc6H0eBAtB8BFs0qcEbpt5KXiphlLCWzbin337ONOiuUpFbj6cyGf8J2+zedoMNFgOoefz1IH8pwYPHDCwIDAQAB",
++  "manifest_version": 3,
++  "name": "Extension Emulator",
++  "version": "1.0",
++  "description": "Answers extension-presence checks for supported sites.",
++  "content_scripts": [
++    {
++      "matches": ["http://*/*", "https://*/*"],
++      "js": ["emulator.js"],
++      "run_at": "document_idle"
++    }
++  ]
++}
+diff --git a/chrome/browser/resources/emulated_extensions/emulator.js b/chrome/browser/resources/emulated_extensions/emulator.js
+new file mode 100644
+index 0000000000..9d5179159b
+--- /dev/null
++++ b/chrome/browser/resources/emulated_extensions/emulator.js
+@@ -0,0 +1,86 @@
++// JithuBrowser "Extension Emulator" content script.
++//
++// Some web applications require a specific browser extension and verify its
++// presence with a window.postMessage protocol: the page broadcasts a typed
++// request message and the extension's content script answers with a typed
++// message listing the enabled extensions. Without the real extension the
++// page blocks the user.
++//
++// This script (bundled as a component extension) answers those protocols for
++// the sites listed below, as if the required extension were installed. It is
++// inert on every other page: it only reacts to messages whose type exactly
++// matches a known request type on a matching host. It never reads the
++// browser's real extension list and makes no network requests.
++
++"use strict";
++
++(() => {
++  // One entry per known extension-check protocol.
++  const PROTOCOLS = [
++    {
++      // Host-suffix match against location.hostname (the host itself or any
++      // of its subdomains).
++      sites: ["smartinterviews.in"],
++      // The page posts {type: requestType} on window.
++      requestType: "CHECK_EXTENSIONS_REQUEST",
++      // The answer is posted back as {type: responseType, ...}.
++      responseType: "FORBIDDEN_EXTENSIONS",
++      // Enabled extensions reported to the page. The page requires the
++      // first one; anything else in the list is treated as forbidden, so
++      // only the required extension is reported.
++      extensions: [
++        {
++          id: "goknflnoeiaookhdbnldcbnodjahpgdh",
++          name: "Hive - Extension Detector",
++          version: "1.2"
++        }
++      ],
++      // Extra fields the real bridge includes in its answer.
++      extra: {isPermissionGiven: true},
++      // Answer once shortly after load, like the real bridge does.
++      proactive: true
++    }
++  ];
++
++  const host = (location.hostname || "").toLowerCase();
++
++  const matchesSites = (sites) =>
++    sites.some((s) => {
++      const suffix = s.toLowerCase();
++      return host === suffix || host.endsWith("." + suffix);
++    });
++
++  const active = PROTOCOLS.filter((p) => matchesSites(p.sites));
++  if (active.length === 0) return;
++
++  const respond = (p) => {
++    const message = {
++      type: p.responseType,
++      enabledExtensions: p.extensions
++    };
++    Object.assign(message, p.extra || {});
++    window.postMessage(message, "*");
++  };
++
++  window.addEventListener(
++    "message",
++    (event) => {
++      if (event.source !== window) return;
++      const data = event.data;
++      if (!data || typeof data !== "object") return;
++      for (const p of active) {
++        if (data.type === p.requestType) {
++          // The real bridge answers from its background worker, i.e. on a
++          // later task; do the same so the timing looks like a round trip.
++          setTimeout(() => respond(p), 0);
++          break;
++        }
++      }
++    },
++    false
++  );
++
++  if (active.some((p) => p.proactive)) {
++    setTimeout(() => active.forEach((p) => p.proactive && respond(p)), 0);
++  }
++})();
+diff --git a/chrome/browser/resources/component_extension_resources.grd b/chrome/browser/resources/component_extension_resources.grd
+index 37f5f7edf2..e56ca59aea 100644
+--- a/chrome/browser/resources/component_extension_resources.grd
++++ b/chrome/browser/resources/component_extension_resources.grd
+@@ -12,6 +12,10 @@
+   </outputs>
+   <release seq="1">
+     <includes>
++      <!-- JithuBrowser: bundled "Extension Emulator" component extension. -->
++      <include name="IDR_EMULATED_EXTENSIONS_MANIFEST" file="emulated_extensions/manifest.json" resource_path="emulated_extensions/manifest.json" type="BINDATA" />
++      <include name="IDR_EMULATED_EXTENSIONS_JS" file="emulated_extensions/emulator.js" resource_path="emulated_extensions/emulator.js" type="BINDATA" />
++
+       <include name="IDR_NETWORK_SPEECH_SYNTHESIS_JS" file="network_speech_synthesis/tts_extension.js" type="BINDATA" />
+ 
+       <include name="IDR_NETWORK_SPEECH_SYNTHESIS_MV3_AUDIO_HTML" file="network_speech_synthesis/mv3/audio.html" type="BINDATA" />
+diff --git a/chrome/browser/resources/BUILD.gn b/chrome/browser/resources/BUILD.gn
+index c76bba1359..ed6c92a4ac 100644
+--- a/chrome/browser/resources/BUILD.gn
++++ b/chrome/browser/resources/BUILD.gn
+@@ -241,6 +241,8 @@ if (enable_extensions_core) {
+     source = "component_extension_resources.grd"
+ 
+     inputs = [
++      "emulated_extensions/emulator.js",
++      "emulated_extensions/manifest.json",
+       "glic/extension/manifest.json",
+       "network_speech_synthesis/mv3/audio.html",
+       "network_speech_synthesis/mv3/audio.js",
+diff --git a/chrome/common/extensions/extension_constants.h b/chrome/common/extensions/extension_constants.h
+index 6e342e2f5b..298af1127b 100644
+--- a/chrome/common/extensions/extension_constants.h
++++ b/chrome/common/extensions/extension_constants.h
+@@ -92,6 +92,11 @@ inline constexpr char kGlicPublicKey[] =
+     "YVUWJKu8V5ZyGWRJTtyo0tQiyNOx/kf3/"
+     "f43CtsAKtsbFqJy9i9ux7JmF+KoORP1fjBJs0zpOGXWHbqIQIDAQAB";
+ 
++// The extension id of JithuBrowser's bundled "Extension Emulator" component
++// extension (answers extension-presence checks for supported sites).
++inline constexpr char kEmulatedExtensionsId[] =
++    "kldblcdpmpjdagdaailehegebjogofan";
++
+ // The extension id of the Gemini testing extension.
+ inline constexpr char kGlicTestExtensionId[] =
+     "oljbkhokcbpaencibijkoolhipplkeoc";
+diff --git a/chrome/browser/extensions/component_loader.cc b/chrome/browser/extensions/component_loader.cc
+index 80927be5ad..d34a13ce0d 100644
+--- a/chrome/browser/extensions/component_loader.cc
++++ b/chrome/browser/extensions/component_loader.cc
+@@ -66,10 +66,12 @@
+ #include "extensions/common/manifest_constants.h"
+ #include "pdf/buildflags.h"
+ #include "printing/buildflags/buildflags.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "ui/accessibility/accessibility_features.h"
+ #include "ui/base/l10n/l10n_util.h"
+ #include "ui/base/resource/resource_bundle.h"
+ 
++
+ #if BUILDFLAG(IS_CHROMEOS)
+ #include "ash/constants/ash_extension_constants.h"
+ #include "ash/constants/ash_features.h"
+@@ -561,6 +563,15 @@ void ComponentLoader::AddGlicExtension() {
+   }
+ }
+ 
++void ComponentLoader::AddEmulatedExtensions() {
++  if (!base::FeatureList::IsEnabled(
++          jithubrowser::features::kJithuBrowserEmulatedExtensions)) {
++    return;
++  }
++  Add(IDR_EMULATED_EXTENSIONS_MANIFEST,
++      base::FilePath(FILE_PATH_LITERAL("emulated_extensions")));
++}
++
+ void ComponentLoader::AddContextualTasksExtension() {
+   if (base::FeatureList::IsEnabled(
+           extensions_features::kApiContextualTasksPrivate)) {
+@@ -695,6 +706,8 @@ void ComponentLoader::AddDefaultComponentExtensions(
+ #endif  // BUILDFLAG(ENABLE_PDF)
+   }
+ 
++  AddEmulatedExtensions();
++
+   AddDefaultComponentExtensionsWithBackgroundPages(skip_session_components);
+ }
+ 
+diff --git a/chrome/browser/extensions/component_loader.h b/chrome/browser/extensions/component_loader.h
+index 0a47e6ac8a..c51f461b59 100644
+--- a/chrome/browser/extensions/component_loader.h
++++ b/chrome/browser/extensions/component_loader.h
+@@ -237,6 +237,9 @@ class ComponentLoader : public KeyedService {
+ 
+   void AddGlicExtension();
+ 
++  // JithuBrowser: bundled "Extension Emulator" component extension.
++  void AddEmulatedExtensions();
++
+   void AddContextualTasksExtension();
+ 
+   void AddWithNameAndDescription(int manifest_resource_id,
+diff --git a/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc b/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
+index 4fb8aaa6b8..15edf484e3 100644
+--- a/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
++++ b/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
+@@ -37,6 +37,7 @@ bool IsComponentExtensionAllowlisted(const std::string& extension_id) {
+   constexpr auto kAllowed = base::MakeFixedFlatSet<std::string_view>({
+       extension_misc::kAimEligibilityExtensionId,
+       extension_misc::kContextualTasksExtensionId,
++      extension_misc::kEmulatedExtensionsId,
+       extension_misc::kGlicExtensionId,
+       extension_misc::kInAppPaymentsSupportAppId,
+       extension_misc::kPdfExtensionId,
+@@ -95,6 +96,7 @@ bool IsComponentExtensionAllowlisted(int manifest_resource_id) {
+ #endif
+     case IDR_AIM_ELIGIBILITY_EXTENSION_MANIFEST_JSON:
+     case IDR_CONTEXTUAL_TASKS_EXTENSION_MANIFEST_JSON:
++    case IDR_EMULATED_EXTENSIONS_MANIFEST:
+     case IDR_GLIC_EXTENSION_MANIFEST:
+     case IDR_NETWORK_SPEECH_SYNTHESIS_MANIFEST:
+     case IDR_NETWORK_SPEECH_SYNTHESIS_MANIFEST_MV3:
+diff --git a/third_party/blink/common/jithubrowser_features.cc b/third_party/blink/common/jithubrowser_features.cc
+index 9f55063016..3f5fd840d7 100644
+--- a/third_party/blink/common/jithubrowser_features.cc
++++ b/third_party/blink/common/jithubrowser_features.cc
+@@ -37,6 +37,8 @@ BASE_FEATURE(kJithuBrowserFarbleCanvas, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kJithuBrowserFarbleWebGL, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kJithuBrowserFarbleAudio, base::FEATURE_ENABLED_BY_DEFAULT);
+ 
++BASE_FEATURE(kJithuBrowserEmulatedExtensions, base::FEATURE_ENABLED_BY_DEFAULT);
++
+ namespace {
+ std::atomic<bool> g_protections_suspended{false};
+ uint64_t Mix(uint64_t x) {
+diff --git a/third_party/blink/public/common/jithubrowser_features.h b/third_party/blink/public/common/jithubrowser_features.h
+index ff33530f01..aa8dbb7880 100644
+--- a/third_party/blink/public/common/jithubrowser_features.h
++++ b/third_party/blink/public/common/jithubrowser_features.h
+@@ -81,7 +81,7 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserSilentTabFullscreenExit);
+ // GitHub releases API at startup; nothing is installed automatically).
+ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserUpdateCheck);
+ // Release number within the pinned Chromium version (JITHUBROWSER_REVISION).
+-inline constexpr int kJithuBrowserRevision = 10;
++inline constexpr int kJithuBrowserRevision = 11;
+ 
+ // Per-site settings (app menu: "Protect this site").
+ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserSiteSettings);
+@@ -89,6 +89,16 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserFarbleCanvas);
+ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserFarbleWebGL);
+ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserFarbleAudio);
+ 
++// Sites that gate their functionality on a required browser extension check
++// for its presence with a window.postMessage protocol. The bundled
++// "Extension Emulator" component extension answers those protocols on the
++// supported sites as if the required extension were installed; the real
++// extension list is never read and nothing is sent to the network.
++BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserEmulatedExtensions);
++// ID of the bundled "Extension Emulator" component extension.
++inline constexpr char kJithuBrowserEmulatedExtensionId[] =
++    "kldblcdpmpjdagdaailehegebjogofan";
++
+ // Per-site settings: the browser sets this for tabs on sites where the user
+ // turned protections off. Process-wide, so all tabs in one renderer process
+ // share it (same-site tabs normally share a process).
+diff --git a/extensions/renderer/user_script_set.cc b/extensions/renderer/user_script_set.cc
+index fcec931557..7623459475 100644
+--- a/extensions/renderer/user_script_set.cc
++++ b/extensions/renderer/user_script_set.cc
+@@ -30,6 +30,7 @@
+ #include "extensions/renderer/script_injection.h"
+ #include "extensions/renderer/user_script_injector.h"
+ #include "extensions/renderer/web_ui_injection_host.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "third_party/blink/public/web/web_document.h"
+ #include "third_party/blink/public/web/web_local_frame.h"
+ #include "url/gurl.h"
+@@ -280,6 +281,15 @@ std::unique_ptr<ScriptInjection> UserScriptSet::GetInjectionForScript(
+   if (!script->MatchesDocument(effective_document_url, is_subframe))
+     return injection;
+ 
++  // JithuBrowser: skip the bundled "Extension Emulator" content script on
++  // sites where the user turned protections off ("Protect this site").
++  if (host_id_.type == mojom::HostID::HostType::kExtensions &&
++      host_id_.id ==
++          jithubrowser::features::kJithuBrowserEmulatedExtensionId &&
++      jithubrowser::features::ProtectionsSuspended()) {
++    return injection;
++  }
++
+   // Extension dynamic scripts are treated as declarative scripts and should use
+   // host permissions instead of scriptable hosts to determine if they should be
+   // injected into a frame.

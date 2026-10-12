@@ -139,9 +139,10 @@ class Cdp:
 
 
 class RawBrowser:
-    def __init__(self, binary, extra_args=()):
+    def __init__(self, binary, extra_args=(), profile_dir=None):
         self.port = _free_port()
-        self.profile = tempfile.mkdtemp(prefix="jithu-raw-")
+        self.owns_profile = profile_dir is None
+        self.profile = profile_dir or tempfile.mkdtemp(prefix="jithu-raw-")
         self.proc = subprocess.Popen(
             [binary, f"--remote-debugging-port={self.port}", f"--user-data-dir={self.profile}", "--no-first-run",
              "--no-default-browser-check", "--no-sandbox", "--disable-gpu", "--window-size=1100,800",
@@ -209,7 +210,8 @@ class RawBrowser:
             self.proc.wait(10)
         except subprocess.TimeoutExpired:
             self.proc.kill()
-        shutil.rmtree(self.profile, ignore_errors=True)
+        if self.owns_profile:
+            shutil.rmtree(self.profile, ignore_errors=True)
 
 
 @pytest.fixture
