@@ -67,7 +67,8 @@ JithuBrowser $VER portable build for x86_64 Linux.
 Run ./jithubrowser.  If your kernel disallows unprivileged user namespaces, make the
 sandbox helper setuid root once:  sudo chown root:root chrome-sandbox && sudo chmod 4755 chrome-sandbox
 EOF
-tar -C "$STAGE/tar" -cJf "$DIST/$TARDIR.tar.xz" "$TARDIR"
+# root:root and name-sorted: no build-machine user/group IDs in the published archive.
+tar -C "$STAGE/tar" --owner=0 --group=0 --numeric-owner --sort=name -cJf "$DIST/$TARDIR.tar.xz" "$TARDIR"
 echo "built $DIST/$TARDIR.tar.xz"
 
 # --- .deb (Debian, Ubuntu, Mint, Pop!_OS, ...) ------------------------------

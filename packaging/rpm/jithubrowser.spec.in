@@ -6,7 +6,10 @@ License:        BSD-3-Clause
 URL:            https://github.com/Jitheswar/JithuBrowser
 ExclusiveArch:  x86_64
 AutoReqProv:    no
-Requires:       nss >= 3.26, nspr, alsa-lib, atk, at-spi2-atk, cups-libs, dbus-libs, libdrm, expat, mesa-libgbm, glib2, gtk3, pango, cairo, libX11, libxcb, libXcomposite, libXdamage, libXext, libXfixes, libxkbcommon, libXrandr, xdg-utils, ca-certificates, liberation-fonts
+# Depend on the shared libraries the browser really loads (not distro-specific package names), so the
+# same package installs on Fedora, RHEL-family and openSUSE.
+Requires:       libglib-2.0.so.0()(64bit), libgobject-2.0.so.0()(64bit), libgio-2.0.so.0()(64bit), libnspr4.so()(64bit), libnss3.so()(64bit), libnssutil3.so()(64bit), libsmime3.so()(64bit), libatk-1.0.so.0()(64bit), libatk-bridge-2.0.so.0()(64bit), libatspi.so.0()(64bit), libdbus-1.so.3()(64bit), libcups.so.2()(64bit), libexpat.so.1()(64bit), libxcb.so.1()(64bit), libxkbcommon.so.0()(64bit), libasound.so.2()(64bit), libgbm.so.1()(64bit), libX11.so.6()(64bit), libXext.so.6()(64bit), libcairo.so.2()(64bit), libpango-1.0.so.0()(64bit), libudev.so.1()(64bit), libXcomposite.so.1()(64bit), libXdamage.so.1()(64bit), libXfixes.so.3()(64bit), libXrandr.so.2()(64bit), libgtk-3.so.0()(64bit), xdg-utils, ca-certificates
+Recommends:     liberation-fonts
 
 %global debug_package %{nil}
 %global _build_id_links none
