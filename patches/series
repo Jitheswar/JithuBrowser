@@ -10,3 +10,5 @@
 0010-screen-metrics-wake-lock-vibrate-mouse.patch
 0011-own-profile-dir-and-desktop-identity.patch
 0012-windows-do-not-bundle-d3dcompiler.patch
+0013-keep-hidden-tabs-active.patch
+0014-own-enterprise-policy-location.patch

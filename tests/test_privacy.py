@@ -307,6 +307,26 @@ def test_wake_lock_does_not_reveal_hidden_tab(raw):
     assert r["result"]["value"] == "ok", r
 
 
+@needs_display
+def test_hidden_tab_timers_and_animation_frames_keep_running(raw):
+    """A page must not be able to tell that it is in a background tab from its own clocks.
+
+    Stock Chrome throttles timers in a hidden tab to ~1 Hz and stops requestAnimationFrame.
+    """
+    raw.spy_tab.ev("""window.__t = {timer: 0, raf: 0};
+        setInterval(() => __t.timer++, 50);
+        (function loop() { __t.raf++; requestAnimationFrame(loop); })();""")
+    time.sleep(1.5)
+    raw.spy_tab.ev("__t.timer = 0; __t.raf = 0")
+    raw.open("about:blank", spy=False)               # spy tab is now hidden on stock Chrome
+    time.sleep(4)
+    t = raw.spy_tab.ev("({...__t})")
+    raw.activate(raw.spy_tab)
+    # Visible pages tick ~80 timers and ~240 frames in 4 s; hidden-tab throttling gives ~4 timers and 0 frames.
+    assert t["timer"] >= 40, t
+    assert t["raf"] >= 40, t
+
+
 # --------------------------------------------------------------------------------
 # Playwright tests (independent of window state)
 # --------------------------------------------------------------------------------

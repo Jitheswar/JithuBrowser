@@ -1,0 +1,98 @@
+diff --git a/content/browser/web_contents/web_contents_impl.cc b/content/browser/web_contents/web_contents_impl.cc
+index 6d6d0947fa..2458d13c48 100644
+--- a/content/browser/web_contents/web_contents_impl.cc
++++ b/content/browser/web_contents/web_contents_impl.cc
+@@ -202,6 +202,7 @@
+ #include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
+ #include "third_party/blink/public/common/custom_handlers/protocol_handler_utils.h"
+ #include "third_party/blink/public/common/features.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "third_party/blink/public/common/loader/resource_type_util.h"
+ #include "third_party/blink/public/common/mime_util/mime_util.h"
+ #include "third_party/blink/public/common/page/content_to_visible_time_request.h"
+@@ -5169,6 +5170,20 @@ void WebContentsImpl::FullscreenFrameSetUpdated() {
+   }
+ }
+ 
++// JithuBrowser: hidden tabs keep painting and are not throttled (like a captured tab), so a page cannot
++// tell it is in the background from timer or animation-frame rates. Only what is *sent to renderers* is
++// changed; tab activation, accessibility and the back/forward cache keep the real hidden state.
++namespace {
++PageVisibilityState JithuBrowserRendererPageVisibility(PageVisibilityState real) {
++  if (real == PageVisibilityState::kHidden &&
++      base::FeatureList::IsEnabled(
++          jithubrowser::features::kJithuBrowserKeepHiddenTabsActive)) {
++    return PageVisibilityState::kHiddenButPainting;
++  }
++  return real;
++}
++}  // namespace
++
+ PageVisibilityState WebContentsImpl::CalculatePageVisibilityState(
+     Visibility visibility) const {
+   // Only hide the page if there are no entities capturing screenshots
+@@ -5218,6 +5233,8 @@ void WebContentsImpl::UpdateVisibilityAndNotifyPageAndView(
+ 
+   PageVisibilityState page_visibility =
+       CalculatePageVisibilityState(new_visibility);
++  const PageVisibilityState renderer_page_visibility =
++      JithuBrowserRendererPageVisibility(page_visibility);
+ 
+   TRACE_EVENT1("content",
+                "WebContentsImpl::UpdateVisibilityAndNotifyPageAndView",
+@@ -5253,7 +5270,13 @@ void WebContentsImpl::UpdateVisibilityAndNotifyPageAndView(
+   RenderViewHostIterationCallback update_frame_tree_visibility =
+       base::BindRepeating(
+           [](PageVisibilityState page_visibility,
++             PageVisibilityState real_page_visibility,
+              RenderViewHostImpl* render_view_host) {
++            // JithuBrowser: pages in the back/forward cache must really be hidden so
++            // they can be frozen.
++            if (render_view_host->is_in_back_forward_cache()) {
++              page_visibility = real_page_visibility;
++            }
+             // If we are a guest frame tree, allow the visibility (ie
+             // display:none) to override the page visibility.
+             if (render_view_host->frame_tree()->is_guest()) {
+@@ -5268,9 +5291,9 @@ void WebContentsImpl::UpdateVisibilityAndNotifyPageAndView(
+ 
+             render_view_host->SetFrameTreeVisibility(page_visibility);
+           },
+-          page_visibility);
++          renderer_page_visibility, page_visibility);
+ 
+-  if (page_visibility != PageVisibilityState::kHidden) {
++  if (renderer_page_visibility != PageVisibilityState::kHidden) {
+     // This shows the Page before showing the individual RenderWidgets, as
+     // RenderWidgets will work to produce compositor frames and handle input
+     // as soon as they are shown. But the Page and other classes do not expect
+@@ -5281,7 +5304,7 @@ void WebContentsImpl::UpdateVisibilityAndNotifyPageAndView(
+ 
+   SetPrimaryMainFrameViewVisibility(new_visibility);
+ 
+-  if (page_visibility == PageVisibilityState::kHidden) {
++  if (renderer_page_visibility == PageVisibilityState::kHidden) {
+     // Similar to when showing the page, we only hide the page after
+     // hiding the individual RenderWidgets.
+     ForEachRenderViewHost(view_mask, update_frame_tree_visibility);
+@@ -5341,8 +5364,8 @@ void WebContentsImpl::UpdateVisibilityAndNotifyPageAndView(
+ }
+ 
+ void WebContentsImpl::SetPrimaryMainFrameViewVisibility(Visibility visibility) {
+-  PageVisibilityState page_visibility =
+-      CalculatePageVisibilityState(visibility);
++  PageVisibilityState page_visibility = JithuBrowserRendererPageVisibility(
++      CalculatePageVisibilityState(visibility));
+ 
+   // A crashed frame might be covered by a sad tab. See docs on SadTabHelper
+   // exactly when it is or isn't. Either way, don't make it visible.
+@@ -11532,6 +11555,9 @@ bool WebContentsImpl::CreateRenderViewForRenderManager(
+   // represent `kHiddenButPainting`. Set the full visibility state explicitly.
+   if (!did_first_set_visible_ && initially_hidden_but_painting_) {
+     rvh_impl->SetFrameTreeVisibility(PageVisibilityState::kHiddenButPainting);
++  } else if (GetPageVisibilityState() == PageVisibilityState::kHidden) {
++    rvh_impl->SetFrameTreeVisibility(
++        JithuBrowserRendererPageVisibility(PageVisibilityState::kHidden));
+   }
+ 
+   // If `render_view_host` is for an inner WebContents, ensure that its
