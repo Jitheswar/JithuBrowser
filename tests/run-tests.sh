@@ -7,7 +7,8 @@ set -euo pipefail
 BROWSER="${1:?usage: run-tests.sh /path/to/browser [pytest args]}"; shift || true
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PY="${JB_PYTHON:-$ROOT/build-work/venv/bin/python}"
-if [ -z "${JB_ROOTFS_RUN:-}" ] && [ "${JB_USE_ROOTFS:-0}" = 1 ]; then
+[[ "$BROWSER" = /* ]] || BROWSER="$(pwd)/$BROWSER"
+if [[ -n "${JB_USE_ROOTFS:-}" && -z "${JB_ROOTFS_RUN:-}" ]]; then
   exec "$ROOT/scripts/enter-rootfs.sh" env JB_ROOTFS_RUN=1 "JB_PYTHON=$PY" bash "$ROOT/tests/run-tests.sh" "$BROWSER" "$@"
 fi
 D=:$((90 + RANDOM % 9))
@@ -16,4 +17,4 @@ XV=$!; trap 'kill $XV $WM 2>/dev/null || true' EXIT
 sleep 1
 DISPLAY=$D openbox >/dev/null 2>&1 &
 WM=$!; sleep 1
-DISPLAY=$D JITHU_BROWSER="$BROWSER" "$PY" -m pytest -v "$ROOT/tests/test_privacy.py" "$@"
+DISPLAY=$D JITHU_BROWSER="$BROWSER" "$PY" -m pytest -v "$ROOT/tests/test_privacy.py" "$ROOT/tests/test_emulated_extensions.py" "$@"

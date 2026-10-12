@@ -79,11 +79,13 @@ PROTOCOL_PAGE = (b"""<!doctype html><title>emu</title><script>
 })();
 </script>""").replace(b"__EXPECTED__", EXPECTED_EXT_ID.encode())
 
-PROBE_PAGE = b"""<!doctype html><title>mgmt</title><script>
+# MV3 forbids inline scripts on extension pages, so the probe JS lives in a file.
+PROBE_PAGE = b"""<!doctype html><title>mgmt</title><script src="probe.js"></script>"""
+PROBE_JS = b"""
 chrome.management.getAll().then(
   (e) => { window.__mgmt = e.map((x) => ({id: x.id, name: x.name, type: x.type})); },
   (e) => { window.__mgmt = {error: String(e)}; });
-</script>"""
+"""
 
 
 class _EmuHandler(http.server.BaseHTTPRequestHandler):
@@ -116,11 +118,14 @@ def _make_tls_cert(host):
          "-days", "2", "-nodes", "-subj", f"/CN={host}",
          "-addext", f"subjectAltName=DNS:{host}"],
         check=True, capture_output=True)
+    # SPKI of the cert public key (kept for reference; the test browser uses
+    # --ignore-certificate-errors because the spki-list switch is inert in
+    # this build).
     pem = subprocess.run(["openssl", "x509", "-in", cert, "-pubkey", "-noout"],
                          check=True, capture_output=True).stdout
     der = subprocess.run(["openssl", "pkey", "-pubin", "-outform", "DER"],
                          input=pem, check=True, capture_output=True).stdout
-    spki = base64.b64encode(der).decode()  # SPKI of the cert public key
+    spki = base64.b64encode(der).decode()
     return cert, key, spki
 
 
@@ -148,7 +153,7 @@ def test_emulation_passes_site_check():
     srv, port = _serve(_EmuHandler, tls=True, certfile=cert, keyfile=key)
     try:
         rb = _browser(["--host-resolver-rules=MAP %s 127.0.0.1" % EMU_HOST,
-                       "--ignore-certificate-errors-spki-list=%s" % spki])
+                       "--ignore-certificate-errors"])
         try:
             tab = rb.open("https://%s:%d/" % (EMU_HOST, port), spy=False)
             s = _wait_state(tab)
@@ -246,22 +251,23 @@ def test_management_list_is_pure():
                    "action": {"default_title": "probe"}}, f)
     with open(os.path.join(ext_dir, "probe.html"), "wb") as f:
         f.write(PROBE_PAGE)
+    with open(os.path.join(ext_dir, "probe.js"), "wb") as f:
+        f.write(PROBE_JS)
+    rb = _browser(["--load-extension=%s" % ext_dir])
     try:
-        rb = _browser(["--load-extension=%s" % ext_dir])
-        try:
-            tab = rb.open("chrome-extension://%s/probe.html" % PROBE_EXT_ID, spy=False)
-            end = time.time() + 10
-            mgmt = None
-            while time.time() < end:
-                mgmt = tab.ev("window.__mgmt || null")
-                if mgmt:
-                    break
-                time.sleep(0.3)
-            assert mgmt and not mgmt.get("error"), mgmt
-            ids = [e["id"] for e in mgmt]
-            assert PROBE_EXT_ID in ids, mgmt                 # API works, user ext visible
-            assert EMULATOR_EXT_ID not in ids, mgmt          # emulator is a component ext
-            assert WEBSTORE_EXT_ID not in ids, mgmt          # stock component exts stay hidden
-        finally:
-            rb.quit()
-            shutil.rmtree(ext_dir, ignore_errors=True)
+        tab = rb.open("chrome-extension://%s/probe.html" % PROBE_EXT_ID, spy=False)
+        end = time.time() + 10
+        mgmt = None
+        while time.time() < end:
+            mgmt = tab.ev("window.__mgmt || null")
+            if mgmt:
+                break
+            time.sleep(0.3)
+        assert mgmt and not mgmt.get("error"), mgmt
+        ids = [e["id"] for e in mgmt]
+        assert PROBE_EXT_ID in ids, mgmt                # API works, user ext visible
+        assert EMULATOR_EXT_ID not in ids, mgmt         # emulator is a component ext
+        assert WEBSTORE_EXT_ID not in ids, mgmt         # stock component exts stay hidden
+    finally:
+        rb.quit()
+        shutil.rmtree(ext_dir, ignore_errors=True)
