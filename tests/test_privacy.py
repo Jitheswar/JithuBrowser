@@ -443,3 +443,25 @@ def test_mouse_screen_coordinates_do_not_reveal_window_position(page):
     assert sx == cx and sy - cy == 85, (sx, sy, cx, cy)
 
 
+
+
+def test_typing_rhythm_is_blurred_even_for_performance_now(page):
+    """A page timing keystrokes with performance.now() in its own handler must not see a robotic rhythm."""
+    page.evaluate("window.__pn = []; addEventListener('keydown', () => __pn.push(performance.now()), true)")
+    page.focus("#i")
+    page.keyboard.type("the quick brown fox jumps over the lazy dog", delay=60)
+    page.wait_for_timeout(500)
+    ts = page.evaluate("__pn")
+    gaps = [b - a for a, b in zip(ts, ts[1:])]
+    assert all(g >= 0 for g in gaps), "events must stay in order"
+    assert len(ts) >= 40, len(ts)
+    # Robotic 60 ms typing: stock browsers reproduce it within ~1-2 ms; the delay adds well over 5 ms of spread.
+    assert statistics.pstdev(gaps) > 5, (statistics.pstdev(gaps), gaps[:8])
+
+
+def test_navigation_api_does_not_reveal_history_depth(page, server):
+    for i in range(6):
+        page.goto(f"{server}/nav{i}")
+    r = page.evaluate("({n: navigation.entries().length, idx: navigation.currentEntry.index, canBack: navigation.canGoBack})")
+    assert r["n"] <= 2 and r["idx"] <= 1, r
+    assert r["canBack"] is True, r          # whether there is anything to go back to is still available

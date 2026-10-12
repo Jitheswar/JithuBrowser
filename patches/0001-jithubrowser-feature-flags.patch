@@ -12,10 +12,10 @@ index 8e635b0da3..c37d7fd29b 100644
      "fenced_frame/redacted_fenced_frame_config_mojom_traits.cc",
 diff --git a/third_party/blink/common/jithubrowser_features.cc b/third_party/blink/common/jithubrowser_features.cc
 new file mode 100644
-index 0000000000..93412527cc
+index 0000000000..4e10602b76
 --- /dev/null
 +++ b/third_party/blink/common/jithubrowser_features.cc
-@@ -0,0 +1,22 @@
+@@ -0,0 +1,24 @@
 +// Copyright 2026 The JithuBrowser Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -34,6 +34,8 @@ index 0000000000..93412527cc
 +BASE_FEATURE(kJithuBrowserKeystrokeJitter, base::FEATURE_ENABLED_BY_DEFAULT);
 +const base::FeatureParam<int> kJithuBrowserKeystrokeJitterMaxMs{
 +    &kJithuBrowserKeystrokeJitter, "max_ms", 30};
++const base::FeatureParam<int> kJithuBrowserKeystrokeDelayMaxMs{
++    &kJithuBrowserKeystrokeJitter, "delay_max_ms", 20};
 +
 +BASE_FEATURE(kJithuBrowserKeepHiddenTabsActive, base::FEATURE_ENABLED_BY_DEFAULT);
 +
@@ -52,10 +54,10 @@ index 5a5d9a64a4..60e082e35d 100644
      "fenced_frame/redacted_fenced_frame_config_mojom_traits.h",
 diff --git a/third_party/blink/public/common/jithubrowser_features.h b/third_party/blink/public/common/jithubrowser_features.h
 new file mode 100644
-index 0000000000..5dcc7e3b63
+index 0000000000..656e3693d7
 --- /dev/null
 +++ b/third_party/blink/public/common/jithubrowser_features.h
-@@ -0,0 +1,63 @@
+@@ -0,0 +1,68 @@
 +// Copyright 2026 The JithuBrowser Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -106,6 +108,11 @@ index 0000000000..5dcc7e3b63
 +// Maximum keystroke delay in milliseconds for kJithuBrowserKeystrokeJitter.
 +BLINK_COMMON_EXPORT extern const base::FeatureParam<int>
 +    kJithuBrowserKeystrokeJitterMaxMs;
++
++// Maximum random delay, in milliseconds, before a key event is handed to the page (order preserved), so
++// typing rhythm measured with performance.now() inside a key handler is blurred as well.
++BLINK_COMMON_EXPORT extern const base::FeatureParam<int>
++    kJithuBrowserKeystrokeDelayMaxMs;
 +
 +// Hidden, minimised and occluded tabs keep painting and are not throttled (they are treated like
 +// a tab being screen-captured), so a page cannot tell it is in the background from its timers

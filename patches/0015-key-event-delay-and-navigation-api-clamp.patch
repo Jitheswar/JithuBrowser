@@ -1,0 +1,196 @@
+diff --git a/third_party/blink/renderer/platform/widget/input/widget_input_handler_impl.cc b/third_party/blink/renderer/platform/widget/input/widget_input_handler_impl.cc
+index 42befad486..2533abda61 100644
+--- a/third_party/blink/renderer/platform/widget/input/widget_input_handler_impl.cc
++++ b/third_party/blink/renderer/platform/widget/input/widget_input_handler_impl.cc
+@@ -4,18 +4,22 @@
+ 
+ #include "third_party/blink/renderer/platform/widget/input/widget_input_handler_impl.h"
+ 
++#include <algorithm>
+ #include <utility>
+ #include <variant>
+ 
+ #include "base/check.h"
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
++#include "base/rand_util.h"
++#include "base/time/time.h"
+ #include "base/task/current_thread.h"
+ #include "base/task/single_thread_task_runner.h"
+ #include "base/trace_event/trace_event.h"
+ #include "build/build_config.h"
+ #include "mojo/public/cpp/bindings/self_owned_associated_receiver.h"
+ #include "third_party/blink/public/common/features.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "third_party/blink/public/common/input/web_coalesced_input_event.h"
+ #include "third_party/blink/public/common/input/web_keyboard_event.h"
+ #include "third_party/blink/public/mojom/input/input_handler.mojom-blink.h"
+@@ -202,6 +206,39 @@ void WidgetInputHandlerImpl::DispatchEvent(
+         original_event_for_gesture,
+     DispatchEventCallback callback) {
+   TRACE_EVENT("input,input.scrolling", "WidgetInputHandlerImpl::DispatchEvent");
++  // JithuBrowser: hand key events to the page after a small random delay so the typing rhythm a page can
++  // measure with performance.now() in its own key handler is blurred. The browser sends the next key event
++  // only after this one is acknowledged, so order is preserved; later events of any type are held back
++  // until the pending delayed one has been delivered, so a click never overtakes a keystroke.
++  if (event && !in_delayed_dispatch_ &&
++      base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserKeystrokeJitter)) {
++    const base::TimeTicks now = base::TimeTicks::Now();
++    // The character event follows its key-down within microseconds, so delaying it too would only add
++    // latency; key-down and key-up carry the timing a page could measure.
++    const WebInputEvent::Type type = event->Event().GetType();
++    const bool is_key = type == WebInputEvent::Type::kRawKeyDown ||
++                        type == WebInputEvent::Type::kKeyDown ||
++                        type == WebInputEvent::Type::kKeyUp;
++    base::TimeTicks deliver_at = now;
++    if (is_key) {
++      const int max_ms = jithubrowser::features::kJithuBrowserKeystrokeDelayMaxMs.Get();
++      if (max_ms > 0) {
++        deliver_at = now + base::RandTimeDeltaUpTo(base::Milliseconds(max_ms));
++      }
++    }
++    deliver_at = std::max(deliver_at, last_delayed_dispatch_time_);
++    if (deliver_at > now) {
++      last_delayed_dispatch_time_ = deliver_at;
++      base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
++          FROM_HERE,
++          base::BindOnce(&WidgetInputHandlerImpl::DispatchDelayedEvent,
++                         weak_ptr_factory_.GetWeakPtr(), std::move(event),
++                         std::move(original_event_for_gesture),
++                         std::move(callback)),
++          deliver_at - now);
++      return;
++    }
++  }
+   if (original_event_for_gesture.has_value()) {
+     input_handler_manager_->DispatchEvent(
+         std::move(original_event_for_gesture.value()), DispatchEventCallback());
+@@ -209,6 +246,17 @@ void WidgetInputHandlerImpl::DispatchEvent(
+   input_handler_manager_->DispatchEvent(std::move(event), std::move(callback));
+ }
+ 
++void WidgetInputHandlerImpl::DispatchDelayedEvent(
++    std::unique_ptr<WebCoalescedInputEvent> event,
++    std::optional<std::unique_ptr<blink::WebCoalescedInputEvent>>
++        original_event_for_gesture,
++    DispatchEventCallback callback) {
++  in_delayed_dispatch_ = true;
++  DispatchEvent(std::move(event), std::move(original_event_for_gesture),
++                std::move(callback));
++  in_delayed_dispatch_ = false;
++}
++
+ void WidgetInputHandlerImpl::DispatchNonBlockingEvent(
+     std::unique_ptr<WebCoalescedInputEvent> event) {
+   TRACE_EVENT0("input,input.scrolling",
+diff --git a/third_party/blink/renderer/platform/widget/input/widget_input_handler_impl.h b/third_party/blink/renderer/platform/widget/input/widget_input_handler_impl.h
+index 051616f0ed..e52bfe1288 100644
+--- a/third_party/blink/renderer/platform/widget/input/widget_input_handler_impl.h
++++ b/third_party/blink/renderer/platform/widget/input/widget_input_handler_impl.h
+@@ -8,6 +8,7 @@
+ #include <variant>
+ 
+ #include "base/memory/weak_ptr.h"
++#include "base/time/time.h"
+ #include "base/task/single_thread_task_runner.h"
+ #include "build/build_config.h"
+ #include "cc/input/browser_controls_offset_tag_modifications.h"
+@@ -76,6 +77,12 @@ class WidgetInputHandlerImpl : public mojom::blink::WidgetInputHandler {
+       DispatchEventCallback callback) override;
+   void DispatchNonBlockingEvent(
+       std::unique_ptr<WebCoalescedInputEvent>) override;
++  // JithuBrowser: delivers an event that was held back by the keystroke delay.
++  void DispatchDelayedEvent(
++      std::unique_ptr<WebCoalescedInputEvent> event,
++      std::optional<std::unique_ptr<blink::WebCoalescedInputEvent>>
++          original_event_for_gesture,
++      DispatchEventCallback callback);
+   void WaitForInputProcessed(WaitForInputProcessedCallback callback) override;
+   void PingMainThread(PingMainThreadCallback callback) override;
+ #if BUILDFLAG(IS_ANDROID)
+@@ -121,6 +128,10 @@ class WidgetInputHandlerImpl : public mojom::blink::WidgetInputHandler {
+   using DirectReceiver = mojo::DirectReceiver<mojom::blink::WidgetInputHandler>;
+   std::variant<std::monostate, Receiver, DirectReceiver> receiver_;
+ 
++  // JithuBrowser keystroke delay state (see DispatchEvent).
++  base::TimeTicks last_delayed_dispatch_time_;
++  bool in_delayed_dispatch_ = false;
++
+   base::WeakPtrFactory<WidgetInputHandlerImpl> weak_ptr_factory_{this};
+ };
+ 
+diff --git a/third_party/blink/renderer/core/navigation_api/navigation_api.cc b/third_party/blink/renderer/core/navigation_api/navigation_api.cc
+index 94bd029176..108dda32a4 100644
+--- a/third_party/blink/renderer/core/navigation_api/navigation_api.cc
++++ b/third_party/blink/renderer/core/navigation_api/navigation_api.cc
+@@ -10,6 +10,7 @@
+ #include "base/check_op.h"
+ #include "base/feature_list.h"
+ #include "base/time/time.h"
++#include "third_party/blink/public/common/jithubrowser_features.h"
+ #include "third_party/blink/public/mojom/frame/frame.mojom-blink.h"
+ #include "third_party/blink/public/web/web_frame_load_type.h"
+ #include "third_party/blink/renderer/bindings/core/v8/binding_security.h"
+@@ -444,9 +445,33 @@ NavigationHistoryEntry* NavigationApi::currentEntry() const {
+ }
+ 
+ HeapVector<Member<NavigationHistoryEntry>> NavigationApi::entries() {
+-  return HasEntriesAndEventsDisabled()
+-             ? HeapVector<Member<NavigationHistoryEntry>>()
+-             : entries_;
++  if (HasEntriesAndEventsDisabled()) {
++    return HeapVector<Member<NavigationHistoryEntry>>();
++  }
++  // JithuBrowser: like history.length, do not reveal how deep this tab's same-origin history is: script sees
++  // only the current entry and the one before it, with indices 0 and 1.
++  if (base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideHistoryLength) && current_entry_index_ >= 0) {
++    HeapVector<Member<NavigationHistoryEntry>> visible;
++    const wtf_size_t current = static_cast<wtf_size_t>(current_entry_index_);
++    for (wtf_size_t i = current > 0 ? current - 1 : 0;
++         i <= current && i < entries_.size(); i++) {
++      visible.push_back(entries_[i]);
++    }
++    return visible;
++  }
++  return entries_;
++}
++
++int NavigationApi::GetExposedIndexFor(NavigationHistoryEntry* entry) {
++  const int index = GetIndexFor(entry);
++  if (index < 0 || !(base::FeatureList::IsEnabled(jithubrowser::features::kJithuBrowserHideHistoryLength) && current_entry_index_ >= 0)) {
++    return index;
++  }
++  const int first_visible = current_entry_index_ > 0 ? current_entry_index_ - 1 : 0;
++  if (index < first_visible || index > current_entry_index_) {
++    return -1;
++  }
++  return index - first_visible;
+ }
+ 
+ void NavigationApi::updateCurrentEntry(
+diff --git a/third_party/blink/renderer/core/navigation_api/navigation_api.h b/third_party/blink/renderer/core/navigation_api/navigation_api.h
+index 7d0911be23..96ef543590 100644
+--- a/third_party/blink/renderer/core/navigation_api/navigation_api.h
++++ b/third_party/blink/renderer/core/navigation_api/navigation_api.h
+@@ -129,6 +129,8 @@ class CORE_EXPORT NavigationApi final : public EventTarget {
+                          mojom::blink::TraverseCancelledReason reason);
+ 
+   int GetIndexFor(NavigationHistoryEntry*);
++  // JithuBrowser: the index script is allowed to see (see navigation_api.cc).
++  int GetExposedIndexFor(NavigationHistoryEntry*);
+   NavigationHistoryEntry* GetExistingEntryFor(const String& key,
+                                               const String& id);
+ 
+diff --git a/third_party/blink/renderer/core/navigation_api/navigation_history_entry.cc b/third_party/blink/renderer/core/navigation_api/navigation_history_entry.cc
+index 3644cf3ab4..a9d20347f3 100644
+--- a/third_party/blink/renderer/core/navigation_api/navigation_history_entry.cc
++++ b/third_party/blink/renderer/core/navigation_api/navigation_history_entry.cc
+@@ -42,7 +42,7 @@ String NavigationHistoryEntry::id() const {
+ }
+ 
+ int64_t NavigationHistoryEntry::index() {
+-  return DomWindow() ? DomWindow()->navigation()->GetIndexFor(this) : -1;
++  return DomWindow() ? DomWindow()->navigation()->GetExposedIndexFor(this) : -1;
+ }
+ 
+ KURL NavigationHistoryEntry::url() {

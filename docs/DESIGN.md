@@ -8,13 +8,13 @@
 
 These are not hidden today; the first few are the ones a determined hostile page can still use.
 
-* **Keystroke jitter only changes `event.timeStamp`.** A page that calls `performance.now()` inside its own key handler still sees true timing.
 * **Shortcut reservation is not airtight.** Auto-repeat key events and the Find bar can still reveal that a reserved shortcut was used.
 * **Other APIs that only work while visible/focused** (media playback pausing, auto Picture-in-Picture, Compute Pressure, WebAuthn, pointer lock, gamepad, sensors, lazy-loaded iframes) still behave differently when the tab is hidden or unfocused.
-* **Navigation API** (`navigation.entries()`) still shows true same-origin history depth; only `history.length` is clamped.
 * **`history.length` is clamped to 2**, which can confuse sites that count entries (some "return to start" and pushState-counting code).
 * Browser-initiated fullscreen exit on tab switch is still delivered to a page that was in fullscreen.
 * Installed web-app windows (`TYPE_APP`) do not get shortcut reservation (upstream gives apps all keys).
+
+**Typing rhythm and history depth are now closed too** (`JithuBrowserKeystrokeJitter`, `JithuBrowserHideHistoryLength`): key-down and key-up events reach the page after a random delay of up to 20 ms (order is preserved, and a click can never overtake a keystroke), so timing measured with `performance.now()` inside a key handler is blurred as well as `event.timeStamp`; the cost is about 10 ms of extra latency on average for each typed character. The Navigation API now shows at most the current entry and the one before it, like `history.length`; entries beyond that cannot be reached with `navigation.traverseTo()`.
 
 **Background-tab throttling is now closed** (feature `JithuBrowserKeepHiddenTabsActive`): hidden, minimised and occluded tabs keep painting and are not throttled, like a tab that is being screen-captured, so timers and `requestAnimationFrame` run at the same rate as in a visible tab. The price is some extra CPU/battery for background tabs; in one synthetic test a hidden tab running a heavy animation used about 9 percentage points more of a CPU core. Turn it off with `--disable-features=JithuBrowserKeepHiddenTabsActive` if you have many busy background tabs.
 

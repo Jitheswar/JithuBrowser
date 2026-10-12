@@ -2,7 +2,7 @@
 
 **A privacy-focused browser built on official Chromium.** Websites keep working, including Chrome-only ones, and Chrome Web Store extensions install normally. Pages just can't watch what you do.
 
-> Status: **pre-release available** ([download](https://github.com/Jitheswar/JithuBrowser/releases)) for Linux x86_64 and Windows x64. All protections pass the 20-test privacy suite on Linux and on the Windows build under Wine (stock Chrome fails 16 of the 20 on Linux and 15 on Windows). Real installs were verified on Ubuntu 22.04 (`.deb`), Fedora 44, Rocky Linux 9.8 and openSUSE Tumbleweed (`.rpm`), and Arch Linux (`makepkg` + `pacman`). The **Windows installer is cross-compiled and has not been run on real Windows.**
+> Status: **pre-release available** ([download](https://github.com/Jitheswar/JithuBrowser/releases)) for Linux x86_64 and Windows x64. All protections pass the 22-test privacy suite on Linux and on the Windows build under Wine (stock Chrome fails 18 of the 22 on Linux and 17 on Windows). Real installs were verified on Ubuntu 22.04 (`.deb`), Fedora 44, Rocky Linux 9.8 and openSUSE Tumbleweed (`.rpm`), and Arch Linux (`makepkg` + `pacman`). The **Windows installer is cross-compiled and has not been run on real Windows.**
 
 ## What JithuBrowser hides from websites
 
@@ -12,11 +12,11 @@
 | Focus / blur | When you click into another window (`blur`, `focus`, `hasFocus()`) | Page always believes its window is focused | verified (dev build, tests pass) |
 | Window geometry & fullscreen | OS window size/position, F11 fullscreen (`outerWidth`, `screenX`, `display-mode`) | Derived from the page viewport; browser fullscreen looks like a normal window | verified (dev build, tests pass) |
 | Background-tab clocks | That your tab is hidden, from timer and animation-frame rates (hidden tabs normally run at 1 Hz and stop `requestAnimationFrame`) | Hidden tabs keep running like visible ones (costs some CPU/battery) | verified (tests pass) |
-| History | How many pages you visited in the tab (`history.length`) | Clamped to 2 | verified (dev build, tests pass) |
+| History | How many pages you visited in the tab (`history.length`, `navigation.entries()`) | Clamped to 2 | verified (dev build, tests pass) |
 | Automation | `navigator.webdriver` | Always `false` | verified (dev build, tests pass) |
 | User-Agent + Client Hints | Exact version, OS version, device model | Looks like stock Google Chrome; high-entropy hints reduced | verified (dev build, tests pass) |
 | Keyboard layout | Your physical layout/language via `navigator.keyboard.getLayoutMap()` | Standard US QWERTY | verified (dev build, tests pass) |
-| Typing rhythm | Keystroke timing biometrics | Key event timestamps are jittered (monotonic, never in the future); `performance.now()` inside a handler is not jittered | verified (dev build, tests pass) |
+| Typing rhythm | Keystroke timing biometrics (via `event.timeStamp` or `performance.now()` in a key handler) | Key events arrive after a random delay of up to 20 ms (order preserved; about 10 ms extra latency per character) and timestamps are jittered | verified (tests pass) |
 | Browser shortcuts | Which shortcuts you press (Ctrl+F, Ctrl+T, F5, ...) | Handled by the browser, never offered to the page (cut/copy/paste still reach the page so web editors work) | verified (dev build, tests pass) |
 
 Not hidden, because the page legitimately needs it: the characters you type into a page's own text fields and the keys you press while a page has focus and no browser shortcut matches.
@@ -171,10 +171,11 @@ Windows: `scripts\windows\build.ps1` then `scripts\windows\package.ps1` (portabl
 
 ## Testing
 
-- `tests/run-tests.sh /path/to/browser`: the 20-test privacy suite (pytest) on a virtual display with a window manager, so tab switches and minimising are real. Run it against stock Chrome as a control: the leak tests fail there and pass on JithuBrowser.
+- `tests/run-tests.sh /path/to/browser`: the 22-test privacy suite (pytest) on a virtual display with a window manager, so tab switches and minimising are real. Run it against stock Chrome as a control: the leak tests fail there and pass on JithuBrowser.
 - `tests/run-tests-wine.sh /path/to/wine /path/to/out/JithuBrowser-win`: the same suite for the Windows build under Wine.
 - `tests/site_sweep.py`: loads 20 real websites and flags "unsupported browser" notices; run it on stock Chrome as a control.
 - `tests/extension_check.py <dirs>`: loads Manifest V3 extensions and checks that they really run.
+- `tests/sandbox_check.sh <browser>`: run as a normal user (`scripts/enter-rootfs-user.sh bash tests/sandbox_check.sh <browser>`) to confirm the browser's own sandbox engages without `--no-sandbox`.
 - `tests/detection/` is a manual page that runs similar probes.
 
 ## License
