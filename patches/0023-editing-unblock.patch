@@ -1,5 +1,5 @@
 diff --git a/chrome/browser/resources/emulated_extensions/emulator.js b/chrome/browser/resources/emulated_extensions/emulator.js
-index b60ffe657f..02357b953c 100644
+index b60ffe657f..d9984406d8 100644
 --- a/chrome/browser/resources/emulated_extensions/emulator.js
 +++ b/chrome/browser/resources/emulated_extensions/emulator.js
 @@ -21,6 +21,11 @@
@@ -34,7 +34,7 @@ index b60ffe657f..02357b953c 100644
            }
        ]
    };
-@@ -159,6 +166,211 @@
+@@ -159,6 +166,214 @@
      return active;
    };
  
@@ -111,6 +111,9 @@ index b60ffe657f..02357b953c 100644
 +    try {
 +      const req = window.require; // AMD loader (Monaco loaded via its loader)
 +      if (typeof req === "function" && typeof req.toUrl === "function") {
++        // Safety net: if the loader never calls back, fall back to the DOM
++        // selection instead of stalling the operation.
++        setTimeout(() => finish(null), 200);
 +        req(["vs/editor/editor.main"], (mod) => finish(grab(mod)));
 +        return;
 +      }
@@ -246,7 +249,7 @@ index b60ffe657f..02357b953c 100644
    // Stage 1: the bundled registry, synchronously - the listener is in place
    // before any page script runs, so the page's first request is answered on
    // its own schedule (a later task, like a real extension bridge).
-@@ -171,6 +383,10 @@
+@@ -171,6 +386,10 @@
    const activeNow = setActive(bundled);
    if (activeNow.length === 0) return; // host not in the bundled registry: inert
  
