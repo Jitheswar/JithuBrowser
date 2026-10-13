@@ -21,4 +21,4 @@ if [[ -z "${JB_DISPLAY:-}" ]]; then
 else
   D=$JB_DISPLAY
 fi
-DISPLAY=$D JITHU_BROWSER="$BROWSER" "$PY" -m pytest -v "$ROOT/tests/test_privacy.py" "$ROOT/tests/test_emulated_extensions.py" "$@"
+DISPLAY=$D JITHU_BROWSER="$BROWSER" "$PY" -m pytest -v "$ROOT/tests/test_privacy.py" "$ROOT/tests/test_emulated_extensions.py" "$ROOT/tests/test_clipboard_unblock.py" "$@"

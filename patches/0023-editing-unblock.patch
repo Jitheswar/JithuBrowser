@@ -1,0 +1,294 @@
+diff --git a/chrome/browser/resources/emulated_extensions/emulator.js b/chrome/browser/resources/emulated_extensions/emulator.js
+index b60ffe657f..02357b953c 100644
+--- a/chrome/browser/resources/emulated_extensions/emulator.js
++++ b/chrome/browser/resources/emulated_extensions/emulator.js
+@@ -21,6 +21,11 @@
+ // unreachable, oversized, malformed or fails validation, the bundled registry
+ // is used unchanged.
+ //
++// Some supported sites also disable ordinary editing (paste whitelist,
++// copy/cut/drag blocks, right-click suppression); when a registry entry sets
++// "clipboardUnblock": true, the script satisfies those controls with the
++// page's own mechanisms so normal browser editing behavior is restored.
++//
+ // Registry format (schema 1):
+ //   {
+ //     "schema": 1,
+@@ -34,7 +39,8 @@
+ //           { "id": "<32-char ext id>", "name": "...", "version": "..." }
+ //         ],
+ //         "extra": { ... },                // extra fields in the answer
+-//         "proactive": true                // answer once shortly after load
++//         "proactive": true,               // answer once shortly after load
++//         "clipboardUnblock": true         // restore normal editing behavior
+ //       }
+ //     ]
+ //   }
+@@ -65,7 +71,8 @@
+               "extra": {
+                   "isPermissionGiven": true
+               },
+-              "proactive": true
++              "proactive": true,
++              "clipboardUnblock": true
+           }
+       ]
+   };
+@@ -159,6 +166,211 @@
+     return active;
+   };
+ 
++
++  // ---------------------------------------------------------------------------
++  // Editing unblock (registry flag: "clipboardUnblock")
++  //
++  // Some supported sites disable ordinary editing inside the page: a
++  // capture-phase paste interceptor that only accepts text the page itself
++  // recorded (kept in localStorage under a position-dependent letter shift),
++  // document capture listeners that block copy/cut/drag-and-drop, and a
++  // context-menu handler that swallows right-click. When the registry entry
++  // for the current host enables this, the page's own checks are satisfied
++  // with the page's own mechanisms, so the user gets normal browser editing
++  // behavior while the page's logic keeps running unchanged.
++  // ---------------------------------------------------------------------------
++  const CLIPBOARD_SHIFT = 123;          // the page's letter-shift constant
++  const CLIPBOARD_KEY = "copiedData";   // the page's in-page clipboard key
++
++  const shiftLetters = (text) => {
++    let out = "";
++    for (let i = 0; i < text.length; i++) {
++      const ch = text[i];
++      if (/[a-zA-Z]/.test(ch)) {
++        const code = ch.charCodeAt(0);
++        const base = ch >= "a" && ch <= "z" ? 97 : 65;
++        out += String.fromCharCode(
++          ((code - base + (i + 1) * CLIPBOARD_SHIFT) % 26 + 26) % 26 + base);
++      } else {
++        out += ch;
++      }
++    }
++    return out;
++  };
++
++  const rememberCopied = (text) => {
++    try {
++      window.localStorage.setItem(CLIPBOARD_KEY, shiftLetters(text));
++    } catch (_) {}
++  };
++
++  // If the page embeds a Monaco-style editor, the selection lives in the
++  // model, not the DOM selection. Calls cb({text, editor, selection}) exactly
++  // once; cb(null) when unavailable (synchronously when no such editor exists).
++  const monacoSelection = (cb) => {
++    let done = false;
++    const finish = (state) => {
++      if (!done) { done = true; cb(state || null); }
++    };
++    const grab = (monaco) => {
++      try {
++        const editors = monaco.editor.getEditors ? monaco.editor.getEditors() : [];
++        let ed = null;
++        for (const e of editors) {
++          try { if (e.hasControl()) { ed = e; break; } } catch (_) {}
++        }
++        if (!ed && editors.length) ed = editors[editors.length - 1];
++        if (ed) {
++          const sel = ed.getSelection();
++          const model = ed.getModel();
++          if (sel && model) {
++            return { text: model.getValueInRange(sel), editor: ed, selection: sel };
++          }
++        }
++      } catch (_) {}
++      return null;
++    };
++    let monaco = null;
++    try { monaco = window.monaco; } catch (_) {}
++    if (monaco && monaco.editor) {
++      finish(grab(monaco));
++      return;
++    }
++    try {
++      const req = window.require; // AMD loader (Monaco loaded via its loader)
++      if (typeof req === "function" && typeof req.toUrl === "function") {
++        req(["vs/editor/editor.main"], (mod) => finish(grab(mod)));
++        return;
++      }
++    } catch (_) {}
++    finish(null);
++  };
++
++  const domSelectionText = () => {
++    try {
++      const s = window.getSelection();
++      return s ? s.toString() : "";
++    } catch (_) {
++      return "";
++    }
++  };
++
++  const writeClipboard = (text) => {
++    try {
++      if (navigator.clipboard && navigator.clipboard.writeText) {
++        Promise.resolve(navigator.clipboard.writeText(text)).catch(() => {});
++      }
++    } catch (_) {}
++  };
++
++  const onUnblockPaste = (event) => {
++    // Record the pasted text with the page's own cipher, before the page's
++    // (later-registered) capture handler evaluates its whitelist, so the
++    // page's own check passes and the paste proceeds natively.
++    try {
++      const data = event.clipboardData;
++      if (data) {
++        const text = data.getData("text/plain");
++        if (typeof text === "string" && text.length) rememberCopied(text);
++      }
++    } catch (_) {}
++  };
++
++  const onUnblockCopy = (event) => {
++    try {
++      event.preventDefault();
++      event.stopImmediatePropagation();
++    } catch (_) {}
++    const domText = domSelectionText();
++    monacoSelection((m) => {
++      const text = (m && m.text) || domText;
++      if (!text) return;
++      writeClipboard(text);
++      rememberCopied(text); // the page records copies this way too
++    });
++  };
++
++  const onUnblockCut = (event) => {
++    let target = null;
++    try {
++      target = event.target;
++      event.preventDefault();
++      event.stopImmediatePropagation();
++    } catch (_) {}
++    const domText = domSelectionText();
++    monacoSelection((m) => {
++      const text = (m && m.text) || domText;
++      if (!text) return;
++      writeClipboard(text);
++      rememberCopied(text);
++      if (m && m.editor) {
++        try { m.editor.executeEdits("jb", [{ range: m.selection, text: "" }]); } catch (_) {}
++        return;
++      }
++      try {
++        if (target && (target.tagName === "TEXTAREA" || target.tagName === "INPUT")) {
++          target.setRangeText("", target.selectionStart, target.selectionEnd, "end");
++        } else if (target && target.isContentEditable) {
++          const s = window.getSelection();
++          if (s && s.rangeCount) s.getRangeAt(0).deleteContents();
++        }
++      } catch (_) {}
++    });
++  };
++
++  const onUnblockContextMenu = (event) => {
++    // Skip the page's blocker; do not preventDefault, so the native context
++    // menu still appears.
++    try { event.stopImmediatePropagation(); } catch (_) {}
++  };
++
++  const onUnblockDragOver = (event) => {
++    // Skip the page's blocker; do not preventDefault, so drops stay allowed.
++    try { event.stopImmediatePropagation(); } catch (_) {}
++  };
++
++  const onUnblockDrop = (event) => {
++    let text = "";
++    let target = null;
++    try {
++      target = event.target;
++      if (event.dataTransfer) text = event.dataTransfer.getData("text/plain") || "";
++      event.preventDefault();
++      event.stopImmediatePropagation();
++    } catch (_) {}
++    if (!text) return;
++    monacoSelection((m) => {
++      if (m && m.editor) {
++        try {
++          if (m.text) m.editor.executeEdits("jb", [{ range: m.selection, text: text }]);
++          else m.editor.trigger("jb", "type", { text: text });
++        } catch (_) {}
++        return;
++      }
++      try {
++        if (target && (target.tagName === "TEXTAREA" || target.tagName === "INPUT")) {
++          target.setRangeText(text, target.selectionStart, target.selectionEnd, "end");
++        } else if (target && target.isContentEditable) {
++          document.execCommand("insertText", false, text);
++        }
++      } catch (_) {}
++    });
++  };
++
++  const installClipboardUnblock = () => {
++    try {
++      // Capture phase, registered at document_start - before the page's own
++      // interceptors (attached later by framework code) - so on the same
++      // object our handlers run first, in registration order.
++      window.addEventListener("paste", onUnblockPaste, true);
++      document.addEventListener("copy", onUnblockCopy, true);
++      document.addEventListener("cut", onUnblockCut, true);
++      document.addEventListener("contextmenu", onUnblockContextMenu, true);
++      document.addEventListener("dragover", onUnblockDragOver, true);
++      document.addEventListener("drop", onUnblockDrop, true);
++    } catch (_) {}
++  };
++
+   // Stage 1: the bundled registry, synchronously - the listener is in place
+   // before any page script runs, so the page's first request is answered on
+   // its own schedule (a later task, like a real extension bridge).
+@@ -171,6 +383,10 @@
+   const activeNow = setActive(bundled);
+   if (activeNow.length === 0) return; // host not in the bundled registry: inert
+ 
++  if (activeNow.some((p) => p.clipboardUnblock === true)) {
++    installClipboardUnblock();
++  }
++
+   // Stage 2: remote refresh (this host is already known to be a supported
+   // one, so the request is expected and not a new tracker contact).
+   (async () => {
+diff --git a/chrome/browser/resources/emulated_extensions/manifest.json b/chrome/browser/resources/emulated_extensions/manifest.json
+index d3cb1f1383..4d520c9e41 100644
+--- a/chrome/browser/resources/emulated_extensions/manifest.json
++++ b/chrome/browser/resources/emulated_extensions/manifest.json
+@@ -2,7 +2,7 @@
+   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwzYiwTzdyq6PJ+sEF8ru78O+hfnQuhHRL8CLe8+uSNOXh9NMUjd0upXkFgo0eXlTglQkrET/IOPkTDt6r/Z9FNPFx/asSPJz7AZbWr29uQVLWkbDMU09gOHU9wPy3DYIYcdbwvn/Eltulla78oySrjr9y3G7QyXzPmzHLoaO6gXIo6vxXxYGt/oOvF+JrO53YnpcdhWPUymhmbBvrFK9JeMRV/FF2hdoAMdeQ5VEoXT2ItVpN3S9WjOtHA+I45bUK9xvRc6H0eBAtB8BFs0qcEbpt5KXiphlLCWzbin337ONOiuUpFbj6cyGf8J2+zedoMNFgOoefz1IH8pwYPHDCwIDAQAB",
+   "manifest_version": 3,
+   "name": "Extension Emulator",
+-  "version": "1.2",
++  "version": "1.3",
+   "description": "Answers extension-presence checks for supported sites.",
+   "content_scripts": [
+     {
+@@ -17,6 +17,7 @@
+     }
+   ],
+   "permissions": [
+-    "storage"
++    "storage",
++    "clipboardWrite"
+   ]
+ }
+diff --git a/third_party/blink/public/common/jithubrowser_features.h b/third_party/blink/public/common/jithubrowser_features.h
+index 8d86b6ac43..81634e8bf0 100644
+--- a/third_party/blink/public/common/jithubrowser_features.h
++++ b/third_party/blink/public/common/jithubrowser_features.h
+@@ -81,7 +81,7 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserSilentTabFullscreenExit);
+ // GitHub releases API at startup; nothing is installed automatically).
+ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserUpdateCheck);
+ // Release number within the pinned Chromium version (JITHUBROWSER_REVISION).
+-inline constexpr int kJithuBrowserRevision = 12;
++inline constexpr int kJithuBrowserRevision = 13;
+ 
+ // Per-site settings (app menu: "Protect this site").
+ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserSiteSettings);

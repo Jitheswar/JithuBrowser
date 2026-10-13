@@ -3,7 +3,9 @@
   "updated": "2026-10-13",
   "protocols": [
     {
-      "sites": ["smartinterviews.in"],
+      "sites": [
+        "smartinterviews.in"
+      ],
       "requestType": "CHECK_EXTENSIONS_REQUEST",
       "responseType": "FORBIDDEN_EXTENSIONS",
       "extensions": [
@@ -13,8 +15,11 @@
           "version": "1.2"
         }
       ],
-      "extra": { "isPermissionGiven": true },
-      "proactive": true
+      "extra": {
+        "isPermissionGiven": true
+      },
+      "proactive": true,
+      "clipboardUnblock": true
     }
   ]
 }
