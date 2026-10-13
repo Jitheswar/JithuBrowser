@@ -1,32 +1,8 @@
-diff --git a/chrome/browser/resources/BUILD.gn b/chrome/browser/resources/BUILD.gn
-index ed6c92a4ac..70df947a7a 100644
---- a/chrome/browser/resources/BUILD.gn
-+++ b/chrome/browser/resources/BUILD.gn
-@@ -243,6 +243,7 @@ if (enable_extensions_core) {
-     inputs = [
-       "emulated_extensions/emulator.js",
-       "emulated_extensions/manifest.json",
-+      "emulated_extensions/protocols.json",
-       "glic/extension/manifest.json",
-       "network_speech_synthesis/mv3/audio.html",
-       "network_speech_synthesis/mv3/audio.js",
-diff --git a/chrome/browser/resources/component_extension_resources.grd b/chrome/browser/resources/component_extension_resources.grd
-index e56ca59aea..3458010327 100644
---- a/chrome/browser/resources/component_extension_resources.grd
-+++ b/chrome/browser/resources/component_extension_resources.grd
-@@ -15,6 +15,7 @@
-       <!-- JithuBrowser: bundled "Extension Emulator" component extension. -->
-       <include name="IDR_EMULATED_EXTENSIONS_MANIFEST" file="emulated_extensions/manifest.json" resource_path="emulated_extensions/manifest.json" type="BINDATA" />
-       <include name="IDR_EMULATED_EXTENSIONS_JS" file="emulated_extensions/emulator.js" resource_path="emulated_extensions/emulator.js" type="BINDATA" />
-+      <include name="IDR_EMULATED_EXTENSIONS_PROTOCOLS" file="emulated_extensions/protocols.json" resource_path="emulated_extensions/protocols.json" type="BINDATA" />
- 
-       <include name="IDR_NETWORK_SPEECH_SYNTHESIS_JS" file="network_speech_synthesis/tts_extension.js" type="BINDATA" />
- 
 diff --git a/chrome/browser/resources/emulated_extensions/emulator.js b/chrome/browser/resources/emulated_extensions/emulator.js
-index 9d5179159b..fec18a35c5 100644
+index 9d5179159b..b60ffe657f 100644
 --- a/chrome/browser/resources/emulated_extensions/emulator.js
 +++ b/chrome/browser/resources/emulated_extensions/emulator.js
-@@ -7,64 +7,111 @@
+@@ -7,64 +7,139 @@
  // page blocks the user.
  //
  // This script (bundled as a component extension) answers those protocols for
@@ -38,13 +14,14 @@ index 9d5179159b..fec18a35c5 100644
 +// matches a known request type on a matching host, and it makes network
 +// requests only on hosts that are already in the bundled registry.
 +//
-+// Protocol knowledge lives in a registry (protocols.json, shipped with the
-+// browser) rather than in this script. While on a matching host the script
-+// also refreshes the registry from a pinned remote document, so registry
-+// corrections (e.g. the required extension changing its name or version)
-+// reach existing installs without a browser rebuild. The remote document is
-+// strictly validated; if it is unreachable, oversized, malformed or fails
-+// validation, the bundled registry is used unchanged.
++// Protocol knowledge lives in a registry (schema 1) rather than in this
++// script. The bundled copy ships in the browser binary (BUNDLED_REGISTRY
++// below); while on a matching host the script also refreshes the registry
++// from a pinned remote document, so registry corrections (e.g. the required
++// extension changing its name or version) reach existing installs without a
++// browser rebuild. The remote document is strictly validated; if it is
++// unreachable, oversized, malformed or fails validation, the bundled registry
++// is used unchanged.
 +//
 +// Registry format (schema 1):
 +//   {
@@ -91,6 +68,33 @@ index 9d5179159b..fec18a35c5 100644
 -      extra: {isPermissionGiven: true},
 -      // Answer once shortly after load, like the real bridge does.
 -      proactive: true
++  // Bundled registry (schema 1, same format as the remote document). This is
++  // the offline fallback: it is part of the browser binary, so the feature
++  // works before any network contact and without it.
++  const BUNDLED_REGISTRY = {
++      "schema": 1,
++      "updated": "2026-10-13",
++      "protocols": [
++          {
++              "sites": [
++                  "smartinterviews.in"
++              ],
++              "requestType": "CHECK_EXTENSIONS_REQUEST",
++              "responseType": "FORBIDDEN_EXTENSIONS",
++              "extensions": [
++                  {
++                      "id": "goknflnoeiaookhdbnldcbnodjahpgdh",
++                      "name": "Hive - Extension Detector",
++                      "version": "1.2"
++                  }
++              ],
++              "extra": {
++                  "isPermissionGiven": true
++              },
++              "proactive": true
++          }
++      ]
++  };
 +  const REMOTE_REGISTRY_URL =
 +    "https://raw.githubusercontent.com/Jitheswar/JithuBrowser/main/registry/protocols.json";
 +  const CACHE_KEY = "protocolRegistry";
@@ -174,7 +178,7 @@ index 9d5179159b..fec18a35c5 100644
        if (event.source !== window) return;
        const data = event.data;
        if (!data || typeof data !== "object") return;
-@@ -76,11 +123,65 @@
+@@ -76,11 +151,63 @@
            break;
          }
        }
@@ -188,27 +192,24 @@ index 9d5179159b..fec18a35c5 100644
 +    }
 +    return active;
 +  };
-+
-+  // Stage 1: bundled registry (served from the browser binary), so the first
-+  // request gets an answer within milliseconds.
-+  (async () => {
-+    let bundled = [];
-+    try {
-+      const r = await fetch(chrome.runtime.getURL("protocols.json"));
-+      if (r.ok) {
-+        const reg = await r.json();
-+        if (validateRegistry(reg)) bundled = reg.protocols;
-+      }
-+    } catch (_) {}
-+    if (bundled.length === 0) return; // inert: no known protocol here
-+    const activeNow = setActive(bundled);
-+    if (activeNow.length === 0) return; // host not in the bundled registry
  
 -  if (active.some((p) => p.proactive)) {
 -    setTimeout(() => active.forEach((p) => p.proactive && respond(p)), 0);
--  }
-+    // Stage 2: remote refresh (this host is already known to be a supported
-+    // one, so the request is expected and not a new tracker contact).
++  // Stage 1: the bundled registry, synchronously - the listener is in place
++  // before any page script runs, so the page's first request is answered on
++  // its own schedule (a later task, like a real extension bridge).
++  if (!validateRegistry(BUNDLED_REGISTRY)) {
++    // Unreachable: the bundled registry ships in the binary and is validated
++    // at build time. Fail inert rather than misbehaving.
++    return;
+   }
++  const bundled = BUNDLED_REGISTRY.protocols;
++  const activeNow = setActive(bundled);
++  if (activeNow.length === 0) return; // host not in the bundled registry: inert
++
++  // Stage 2: remote refresh (this host is already known to be a supported
++  // one, so the request is expected and not a new tracker contact).
++  (async () => {
 +    try {
 +      let remote = null;
 +      try {
@@ -247,7 +248,7 @@ index 9d5179159b..fec18a35c5 100644
 +  })();
  })();
 diff --git a/chrome/browser/resources/emulated_extensions/manifest.json b/chrome/browser/resources/emulated_extensions/manifest.json
-index 094619de60..dd1cfd134b 100644
+index 094619de60..d3cb1f1383 100644
 --- a/chrome/browser/resources/emulated_extensions/manifest.json
 +++ b/chrome/browser/resources/emulated_extensions/manifest.json
 @@ -2,13 +2,21 @@
@@ -255,7 +256,7 @@ index 094619de60..dd1cfd134b 100644
    "manifest_version": 3,
    "name": "Extension Emulator",
 -  "version": "1.0",
-+  "version": "1.1",
++  "version": "1.2",
    "description": "Answers extension-presence checks for supported sites.",
    "content_scripts": [
      {
@@ -275,32 +276,6 @@ index 094619de60..dd1cfd134b 100644
 +    "storage"
    ]
  }
-diff --git a/chrome/browser/resources/emulated_extensions/protocols.json b/chrome/browser/resources/emulated_extensions/protocols.json
-new file mode 100644
-index 0000000000..7cde526907
---- /dev/null
-+++ b/chrome/browser/resources/emulated_extensions/protocols.json
-@@ -0,0 +1,20 @@
-+{
-+  "schema": 1,
-+  "updated": "2026-10-13",
-+  "protocols": [
-+    {
-+      "sites": ["smartinterviews.in"],
-+      "requestType": "CHECK_EXTENSIONS_REQUEST",
-+      "responseType": "FORBIDDEN_EXTENSIONS",
-+      "extensions": [
-+        {
-+          "id": "goknflnoeiaookhdbnldcbnodjahpgdh",
-+          "name": "Hive - Extension Detector",
-+          "version": "1.2"
-+        }
-+      ],
-+      "extra": { "isPermissionGiven": true },
-+      "proactive": true
-+    }
-+  ]
-+}
 diff --git a/third_party/blink/public/common/jithubrowser_features.h b/third_party/blink/public/common/jithubrowser_features.h
 index aa8dbb7880..8d86b6ac43 100644
 --- a/third_party/blink/public/common/jithubrowser_features.h
