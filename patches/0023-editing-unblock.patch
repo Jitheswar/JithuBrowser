@@ -294,7 +294,7 @@ index 8d86b6ac43..81634e8bf0 100644
  BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserUpdateCheck);
  // Release number within the pinned Chromium version (JITHUBROWSER_REVISION).
 -inline constexpr int kJithuBrowserRevision = 12;
-+inline constexpr int kJithuBrowserRevision = 13;
++inline constexpr int kJithuBrowserRevision = 14;
  
  // Per-site settings (app menu: "Protect this site").
  BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserSiteSettings);
