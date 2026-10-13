@@ -70,13 +70,13 @@ index a6d969df56..c774ab66fc 100644
 -        .browser_prog_id_prefix = L"ChromiumHTM",  // Browser ProgID prefix.
 +        .base_app_name = L"JithuBrowser",          // A distinct base_app_name.
 +        .base_app_id = L"JithuBrowser",            // A distinct base_app_id.
-+        .browser_prog_id_prefix = L"JithuBrowserHTM",  // Browser ProgID prefix.
++        .browser_prog_id_prefix = L"JithuHTM",      // Browser ProgID prefix.
          .browser_prog_id_description =
 -            L"Chromium HTML Document",  // Browser ProgID description.
 +            L"JithuBrowser HTML Document",  // Browser ProgID description.
          .direct_launch_url_scheme = "chromium",
 -        .pdf_prog_id_prefix = L"ChromiumPDF",  // PDF ProgID prefix.
-+        .pdf_prog_id_prefix = L"JithuBrowserPDF",  // PDF ProgID prefix.
++        .pdf_prog_id_prefix = L"JithuPDF",      // PDF ProgID prefix.
          .pdf_prog_id_description =
 -            L"Chromium PDF Document",  // PDF ProgID description.
 +            L"JithuBrowser PDF Document",  // PDF ProgID description.
