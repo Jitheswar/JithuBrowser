@@ -273,3 +273,26 @@ def test_management_list_is_pure():
     finally:
         rb.quit()
         shutil.rmtree(ext_dir, ignore_errors=True)
+
+
+@needs_display
+def test_remote_registry_unavailable_still_works():
+    """If the remote registry refresh is unreachable, the bundled registry must
+    keep the feature working (resilience, no false answers, no crash)."""
+    _require_browser()
+    srv, port = _serve(_EmuHandler)
+    try:
+        rb = _browser(["--host-resolver-rules=MAP %s 127.0.0.1, MAP raw.githubusercontent.com 127.0.0.1" % EMU_HOST])
+        try:
+            tab = rb.open("http://%s:%d/" % (EMU_HOST, port), spy=False)
+            s = _wait_state(tab)
+            assert s and s["seen"] >= 1, s
+            assert s["show"] is False, s
+            assert s["reason"] is None and not s["others"], s
+            a = tab.ev("window.__lastAnswer || null")
+            assert a and a["id"] == EXPECTED_EXT_ID, a
+            assert a["count"] == 1, a
+        finally:
+            rb.quit()
+    finally:
+        srv.shutdown()

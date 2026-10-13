@@ -1,0 +1,316 @@
+diff --git a/chrome/browser/resources/BUILD.gn b/chrome/browser/resources/BUILD.gn
+index ed6c92a4ac..70df947a7a 100644
+--- a/chrome/browser/resources/BUILD.gn
++++ b/chrome/browser/resources/BUILD.gn
+@@ -243,6 +243,7 @@ if (enable_extensions_core) {
+     inputs = [
+       "emulated_extensions/emulator.js",
+       "emulated_extensions/manifest.json",
++      "emulated_extensions/protocols.json",
+       "glic/extension/manifest.json",
+       "network_speech_synthesis/mv3/audio.html",
+       "network_speech_synthesis/mv3/audio.js",
+diff --git a/chrome/browser/resources/component_extension_resources.grd b/chrome/browser/resources/component_extension_resources.grd
+index e56ca59aea..3458010327 100644
+--- a/chrome/browser/resources/component_extension_resources.grd
++++ b/chrome/browser/resources/component_extension_resources.grd
+@@ -15,6 +15,7 @@
+       <!-- JithuBrowser: bundled "Extension Emulator" component extension. -->
+       <include name="IDR_EMULATED_EXTENSIONS_MANIFEST" file="emulated_extensions/manifest.json" resource_path="emulated_extensions/manifest.json" type="BINDATA" />
+       <include name="IDR_EMULATED_EXTENSIONS_JS" file="emulated_extensions/emulator.js" resource_path="emulated_extensions/emulator.js" type="BINDATA" />
++      <include name="IDR_EMULATED_EXTENSIONS_PROTOCOLS" file="emulated_extensions/protocols.json" resource_path="emulated_extensions/protocols.json" type="BINDATA" />
+ 
+       <include name="IDR_NETWORK_SPEECH_SYNTHESIS_JS" file="network_speech_synthesis/tts_extension.js" type="BINDATA" />
+ 
+diff --git a/chrome/browser/resources/emulated_extensions/emulator.js b/chrome/browser/resources/emulated_extensions/emulator.js
+index 9d5179159b..fec18a35c5 100644
+--- a/chrome/browser/resources/emulated_extensions/emulator.js
++++ b/chrome/browser/resources/emulated_extensions/emulator.js
+@@ -7,64 +7,111 @@
+ // page blocks the user.
+ //
+ // This script (bundled as a component extension) answers those protocols for
+-// the sites listed below, as if the required extension were installed. It is
++// the supported sites, as if the required extension were installed. It is
+ // inert on every other page: it only reacts to messages whose type exactly
+-// matches a known request type on a matching host. It never reads the
+-// browser's real extension list and makes no network requests.
++// matches a known request type on a matching host, and it makes network
++// requests only on hosts that are already in the bundled registry.
++//
++// Protocol knowledge lives in a registry (protocols.json, shipped with the
++// browser) rather than in this script. While on a matching host the script
++// also refreshes the registry from a pinned remote document, so registry
++// corrections (e.g. the required extension changing its name or version)
++// reach existing installs without a browser rebuild. The remote document is
++// strictly validated; if it is unreachable, oversized, malformed or fails
++// validation, the bundled registry is used unchanged.
++//
++// Registry format (schema 1):
++//   {
++//     "schema": 1,
++//     "updated": "YYYY-MM-DD",
++//     "protocols": [
++//       {
++//         "sites": ["example.com"],        // host-suffix match
++//         "requestType": "SOME_REQUEST",   // page -> extension message type
++//         "responseType": "SOME_RESPONSE", // answer message type
++//         "extensions": [
++//           { "id": "<32-char ext id>", "name": "...", "version": "..." }
++//         ],
++//         "extra": { ... },                // extra fields in the answer
++//         "proactive": true                // answer once shortly after load
++//       }
++//     ]
++//   }
+ 
+ "use strict";
+ 
+ (() => {
+-  // One entry per known extension-check protocol.
+-  const PROTOCOLS = [
+-    {
+-      // Host-suffix match against location.hostname (the host itself or any
+-      // of its subdomains).
+-      sites: ["smartinterviews.in"],
+-      // The page posts {type: requestType} on window.
+-      requestType: "CHECK_EXTENSIONS_REQUEST",
+-      // The answer is posted back as {type: responseType, ...}.
+-      responseType: "FORBIDDEN_EXTENSIONS",
+-      // Enabled extensions reported to the page. The page requires the
+-      // first one; anything else in the list is treated as forbidden, so
+-      // only the required extension is reported.
+-      extensions: [
+-        {
+-          id: "goknflnoeiaookhdbnldcbnodjahpgdh",
+-          name: "Hive - Extension Detector",
+-          version: "1.2"
+-        }
+-      ],
+-      // Extra fields the real bridge includes in its answer.
+-      extra: {isPermissionGiven: true},
+-      // Answer once shortly after load, like the real bridge does.
+-      proactive: true
++  const REMOTE_REGISTRY_URL =
++    "https://raw.githubusercontent.com/Jitheswar/JithuBrowser/main/registry/protocols.json";
++  const CACHE_KEY = "protocolRegistry";
++  const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
++  const MAX_REGISTRY_BYTES = 64 * 1024;
++
++  const isHost = (h) =>
++    typeof h === "string" && h.length > 0 && h.length <= 253 &&
++    /^[a-z0-9.-]+$/i.test(h);
++
++  const isExt = (e) =>
++    e && typeof e === "object" &&
++    typeof e.id === "string" && /^[a-p]{32}$/.test(e.id) &&
++    typeof e.name === "string" && e.name.length > 0 && e.name.length <= 200 &&
++    typeof e.version === "string" && e.version.length > 0 && e.version.length <= 64;
++
++  const validateRegistry = (r) =>
++    r && typeof r === "object" && !Array.isArray(r) &&
++    r.schema === 1 &&
++    Array.isArray(r.protocols) && r.protocols.length > 0 && r.protocols.length <= 32 &&
++    r.protocols.every((p) =>
++      p && typeof p === "object" &&
++      Array.isArray(p.sites) && p.sites.length > 0 && p.sites.every(isHost) &&
++      typeof p.requestType === "string" &&
++        p.requestType.length > 0 && p.requestType.length <= 128 &&
++      typeof p.responseType === "string" &&
++        p.responseType.length > 0 && p.responseType.length <= 128 &&
++      Array.isArray(p.extensions) &&
++        p.extensions.length > 0 && p.extensions.length <= 8 &&
++        p.extensions.every(isExt) &&
++      (p.extra === undefined ||
++        (p.extra && typeof p.extra === "object" && !Array.isArray(p.extra))) &&
++      (p.proactive === undefined || typeof p.proactive === "boolean"));
++
++  // Union of both registries; for the same site+requestType the remote entry
++  // wins (it is the newer one).
++  const mergeProtocols = (base, remote) => {
++    const out = base.slice();
++    for (const r of remote) {
++      const i = out.findIndex(
++        (b) => b.requestType === r.requestType &&
++               b.sites.join("\u0000") === r.sites.join("\u0000"));
++      if (i >= 0) out[i] = r;
++      else out.push(r);
+     }
+-  ];
++    return out;
++  };
+ 
+   const host = (location.hostname || "").toLowerCase();
+-
+   const matchesSites = (sites) =>
+     sites.some((s) => {
+       const suffix = s.toLowerCase();
+       return host === suffix || host.endsWith("." + suffix);
+     });
+ 
+-  const active = PROTOCOLS.filter((p) => matchesSites(p.sites));
+-  if (active.length === 0) return;
+-
+   const respond = (p) => {
+     const message = {
+       type: p.responseType,
+       enabledExtensions: p.extensions
+     };
+-    Object.assign(message, p.extra || {});
++    if (p.extra) Object.assign(message, p.extra);
+     window.postMessage(message, "*");
+   };
+ 
+-  window.addEventListener(
+-    "message",
+-    (event) => {
++  let onMessage = null;
++  const setActive = (protocols) => {
++    const active = protocols.filter((p) => matchesSites(p.sites));
++    if (onMessage) window.removeEventListener("message", onMessage, false);
++    onMessage = null;
++    if (active.length === 0) return active;
++    onMessage = (event) => {
+       if (event.source !== window) return;
+       const data = event.data;
+       if (!data || typeof data !== "object") return;
+@@ -76,11 +123,65 @@
+           break;
+         }
+       }
+-    },
+-    false
+-  );
++    };
++    window.addEventListener("message", onMessage, false);
++    if (active.some((p) => p.proactive)) {
++      setTimeout(() => active.forEach((p) => p.proactive && respond(p)), 0);
++    }
++    return active;
++  };
++
++  // Stage 1: bundled registry (served from the browser binary), so the first
++  // request gets an answer within milliseconds.
++  (async () => {
++    let bundled = [];
++    try {
++      const r = await fetch(chrome.runtime.getURL("protocols.json"));
++      if (r.ok) {
++        const reg = await r.json();
++        if (validateRegistry(reg)) bundled = reg.protocols;
++      }
++    } catch (_) {}
++    if (bundled.length === 0) return; // inert: no known protocol here
++    const activeNow = setActive(bundled);
++    if (activeNow.length === 0) return; // host not in the bundled registry
+ 
+-  if (active.some((p) => p.proactive)) {
+-    setTimeout(() => active.forEach((p) => p.proactive && respond(p)), 0);
+-  }
++    // Stage 2: remote refresh (this host is already known to be a supported
++    // one, so the request is expected and not a new tracker contact).
++    try {
++      let remote = null;
++      try {
++        const cached = await chrome.storage.session.get(CACHE_KEY);
++        const c = cached && cached[CACHE_KEY];
++        if (c && c.registry && Date.now() - (c.fetchedAt || 0) < CACHE_TTL_MS) {
++          remote = c.registry.protocols;
++        }
++      } catch (_) {}
++      if (!remote) {
++        try {
++          const r = await fetch(REMOTE_REGISTRY_URL, {cache: "no-store"});
++          if (r.ok) {
++            const text = await r.text();
++            if (text.length > 0 && text.length <= MAX_REGISTRY_BYTES) {
++              const parsed = JSON.parse(text);
++              if (validateRegistry(parsed)) {
++                remote = parsed.protocols;
++                try {
++                  await chrome.storage.session.set({
++                    [CACHE_KEY]: {registry: parsed, fetchedAt: Date.now()}
++                  });
++                } catch (_) {}
++              }
++            }
++          }
++        } catch (_) {}
++      }
++      if (!remote) return; // stay on the bundled registry
++      const merged = mergeProtocols(bundled, remote);
++      if (JSON.stringify(merged) === JSON.stringify(bundled)) return;
++      // Registry updated while the page was loading: adopt it. A proactive
++      // answer is re-sent; pages accept answers at any time.
++      setActive(merged);
++    } catch (_) {}
++  })();
+ })();
+diff --git a/chrome/browser/resources/emulated_extensions/manifest.json b/chrome/browser/resources/emulated_extensions/manifest.json
+index 094619de60..dd1cfd134b 100644
+--- a/chrome/browser/resources/emulated_extensions/manifest.json
++++ b/chrome/browser/resources/emulated_extensions/manifest.json
+@@ -2,13 +2,21 @@
+   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwzYiwTzdyq6PJ+sEF8ru78O+hfnQuhHRL8CLe8+uSNOXh9NMUjd0upXkFgo0eXlTglQkrET/IOPkTDt6r/Z9FNPFx/asSPJz7AZbWr29uQVLWkbDMU09gOHU9wPy3DYIYcdbwvn/Eltulla78oySrjr9y3G7QyXzPmzHLoaO6gXIo6vxXxYGt/oOvF+JrO53YnpcdhWPUymhmbBvrFK9JeMRV/FF2hdoAMdeQ5VEoXT2ItVpN3S9WjOtHA+I45bUK9xvRc6H0eBAtB8BFs0qcEbpt5KXiphlLCWzbin337ONOiuUpFbj6cyGf8J2+zedoMNFgOoefz1IH8pwYPHDCwIDAQAB",
+   "manifest_version": 3,
+   "name": "Extension Emulator",
+-  "version": "1.0",
++  "version": "1.1",
+   "description": "Answers extension-presence checks for supported sites.",
+   "content_scripts": [
+     {
+-      "matches": ["http://*/*", "https://*/*"],
+-      "js": ["emulator.js"],
++      "matches": [
++        "http://*/*",
++        "https://*/*"
++      ],
++      "js": [
++        "emulator.js"
++      ],
+       "run_at": "document_idle"
+     }
++  ],
++  "permissions": [
++    "storage"
+   ]
+ }
+diff --git a/chrome/browser/resources/emulated_extensions/protocols.json b/chrome/browser/resources/emulated_extensions/protocols.json
+new file mode 100644
+index 0000000000..7cde526907
+--- /dev/null
++++ b/chrome/browser/resources/emulated_extensions/protocols.json
+@@ -0,0 +1,20 @@
++{
++  "schema": 1,
++  "updated": "2026-10-13",
++  "protocols": [
++    {
++      "sites": ["smartinterviews.in"],
++      "requestType": "CHECK_EXTENSIONS_REQUEST",
++      "responseType": "FORBIDDEN_EXTENSIONS",
++      "extensions": [
++        {
++          "id": "goknflnoeiaookhdbnldcbnodjahpgdh",
++          "name": "Hive - Extension Detector",
++          "version": "1.2"
++        }
++      ],
++      "extra": { "isPermissionGiven": true },
++      "proactive": true
++    }
++  ]
++}
+diff --git a/third_party/blink/public/common/jithubrowser_features.h b/third_party/blink/public/common/jithubrowser_features.h
+index aa8dbb7880..8d86b6ac43 100644
+--- a/third_party/blink/public/common/jithubrowser_features.h
++++ b/third_party/blink/public/common/jithubrowser_features.h
+@@ -81,7 +81,7 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserSilentTabFullscreenExit);
+ // GitHub releases API at startup; nothing is installed automatically).
+ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserUpdateCheck);
+ // Release number within the pinned Chromium version (JITHUBROWSER_REVISION).
+-inline constexpr int kJithuBrowserRevision = 11;
++inline constexpr int kJithuBrowserRevision = 12;
+ 
+ // Per-site settings (app menu: "Protect this site").
+ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserSiteSettings);
