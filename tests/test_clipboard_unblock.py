@@ -17,6 +17,8 @@ import http.server
 import json
 import os
 import shutil
+import ssl
+import subprocess
 import tempfile
 import threading
 import time
@@ -148,8 +150,29 @@ class _CpbHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(REPLICA_PAGE)
 
 
+_TLS = {}
+
+
+def _tls():
+    if not _TLS:
+        d = tempfile.mkdtemp(prefix="jithu-cpb-tls-")
+        key, crt = os.path.join(d, "key.pem"), os.path.join(d, "cert.pem")
+        subprocess.run([
+            "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+            "-keyout", key, "-out", crt, "-days", "2",
+            "-subj", "/CN=" + CP_HOST,
+            "-addext", "subjectAltName=DNS:" + CP_HOST + ",DNS:" + CTL_HOST,
+        ], check=True, capture_output=True)
+        _TLS.update(key=key, crt=crt)
+    return _TLS["key"], _TLS["crt"]
+
+
 def _serve():
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _CpbHandler)
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    key, crt = _tls()
+    ctx.load_cert_chain(crt, key)
+    srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv, srv.server_address[1]
 
@@ -199,10 +222,11 @@ def test_paste_external_real():
     _require_browser()
     srv, port = _serve()
     try:
-        rb = _browser(["--host-resolver-rules=MAP %s 127.0.0.1" % CP_HOST])
+        rb = _browser(["--ignore-certificate-errors",
+                       "--host-resolver-rules=MAP %s 127.0.0.1" % CP_HOST])
         try:
-            tab = rb.open("http://%s:%d/" % (CP_HOST, port), spy=False)
-            origin = "http://%s:%d" % (CP_HOST, port)
+            tab = rb.open("https://%s:%d/" % (CP_HOST, port), spy=False)
+            origin = "https://%s:%d" % (CP_HOST, port)
             _grant_clipboard(rb, origin)
             ext = "def external_helper(n):\n    return n * 2 + 1\n"
             ok = tab.ev("navigator.clipboard.writeText(%r)"
@@ -237,9 +261,10 @@ def test_copy_out_roundtrip_real():
     _require_browser()
     srv, port = _serve()
     try:
-        rb = _browser(["--host-resolver-rules=MAP %s 127.0.0.1" % CP_HOST])
+        rb = _browser(["--ignore-certificate-errors",
+                       "--host-resolver-rules=MAP %s 127.0.0.1" % CP_HOST])
         try:
-            tab = rb.open("http://%s:%d/" % (CP_HOST, port), spy=False)
+            tab = rb.open("https://%s:%d/" % (CP_HOST, port), spy=False)
             text = "my solution code 42"
             tab.ev("const el = document.getElementById('ed');"
                    " el.value = %r; el.setSelectionRange(0, %d);"
@@ -276,12 +301,13 @@ def test_cut_real():
     _require_browser()
     srv, port = _serve()
     try:
-        rb = _browser(["--host-resolver-rules=MAP %s 127.0.0.1" % CP_HOST])
+        rb = _browser(["--ignore-certificate-errors",
+                       "--host-resolver-rules=MAP %s 127.0.0.1" % CP_HOST])
         try:
-            tab = rb.open("http://%s:%d/" % (CP_HOST, port), spy=False)
+            tab = rb.open("https://%s:%d/" % (CP_HOST, port), spy=False)
             full = "aaa-keep-bbb-mid-ccc-keep"
             tab.ev("const el = document.getElementById('ed');"
-                   " el.value = %r; el.setSelectionRange(8, 15); el.focus();" % full)
+                   " el.value = %r; el.setSelectionRange(9, 16); el.focus();" % full)
             rb.focus_os_window()
             time.sleep(0.5)
             _ctrl_combo(tab, "x")
@@ -319,9 +345,10 @@ def test_right_click_native():
     _require_browser()
     srv, port = _serve()
     try:
-        rb = _browser(["--host-resolver-rules=MAP %s 127.0.0.1" % CP_HOST])
+        rb = _browser(["--ignore-certificate-errors",
+                       "--host-resolver-rules=MAP %s 127.0.0.1" % CP_HOST])
         try:
-            tab = rb.open("http://%s:%d/" % (CP_HOST, port), spy=False)
+            tab = rb.open("https://%s:%d/" % (CP_HOST, port), spy=False)
             rb.focus_os_window()
             time.sleep(0.5)
             _right_click(tab)
@@ -349,9 +376,10 @@ def test_drag_drop_text():
     _require_browser()
     srv, port = _serve()
     try:
-        rb = _browser(["--host-resolver-rules=MAP %s 127.0.0.1" % CP_HOST])
+        rb = _browser(["--ignore-certificate-errors",
+                       "--host-resolver-rules=MAP %s 127.0.0.1" % CP_HOST])
         try:
-            tab = rb.open("http://%s:%d/" % (CP_HOST, port), spy=False)
+            tab = rb.open("https://%s:%d/" % (CP_HOST, port), spy=False)
             val = tab.ev(
                 """(() => {
                   const el = document.getElementById('ed');
@@ -382,10 +410,11 @@ def test_control_host_still_blocks():
     _require_browser()
     srv, port = _serve()
     try:
-        rb = _browser(["--host-resolver-rules=MAP %s 127.0.0.1, MAP %s 127.0.0.1" % (CTL_HOST, CP_HOST)])
+        rb = _browser(["--ignore-certificate-errors",
+                       "--host-resolver-rules=MAP %s 127.0.0.1, MAP %s 127.0.0.1" % (CTL_HOST, CP_HOST)])
         try:
-            tab = rb.open("http://%s:%d/" % (CTL_HOST, port), spy=False)
-            origin = "http://%s:%d" % (CTL_HOST, port)
+            tab = rb.open("https://%s:%d/" % (CTL_HOST, port), spy=False)
+            origin = "https://%s:%d" % (CTL_HOST, port)
             _grant_clipboard(rb, origin)
             ext = "should stay blocked 77"
             ok = tab.ev("navigator.clipboard.writeText(%r)"
@@ -412,11 +441,12 @@ def test_feature_off_still_blocks():
     _require_browser()
     srv, port = _serve()
     try:
-        rb = _browser(["--host-resolver-rules=MAP %s 127.0.0.1" % CP_HOST,
+        rb = _browser(["--ignore-certificate-errors",
+                       "--host-resolver-rules=MAP %s 127.0.0.1" % CP_HOST,
                        "--disable-features=JithuBrowserEmulatedExtensions"])
         try:
-            tab = rb.open("http://%s:%d/" % (CP_HOST, port), spy=False)
-            origin = "http://%s:%d" % (CP_HOST, port)
+            tab = rb.open("https://%s:%d/" % (CP_HOST, port), spy=False)
+            origin = "https://%s:%d" % (CP_HOST, port)
             _grant_clipboard(rb, origin)
             ext = "should stay blocked 88"
             ok = tab.ev("navigator.clipboard.writeText(%r)"
@@ -448,11 +478,12 @@ def test_per_site_off_still_blocks():
                    "jithubrowser": {"unprotected_sites": ["smartinterviews.in"]}}, f)
     srv, port = _serve()
     try:
-        rb = _browser(["--host-resolver-rules=MAP %s 127.0.0.1" % CP_HOST],
+        rb = _browser(["--ignore-certificate-errors",
+                       "--host-resolver-rules=MAP %s 127.0.0.1" % CP_HOST],
                       profile_dir=profile)
         try:
-            tab = rb.open("http://%s:%d/" % (CP_HOST, port), spy=False)
-            origin = "http://%s:%d" % (CP_HOST, port)
+            tab = rb.open("https://%s:%d/" % (CP_HOST, port), spy=False)
+            origin = "https://%s:%d" % (CP_HOST, port)
             _grant_clipboard(rb, origin)
             ext = "should stay blocked 99"
             ok = tab.ev("navigator.clipboard.writeText(%r)"
