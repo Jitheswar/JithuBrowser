@@ -1,5 +1,5 @@
 diff --git a/chrome/browser/resources/emulated_extensions/emulator.js b/chrome/browser/resources/emulated_extensions/emulator.js
-index b60ffe6..529ba15 100644
+index b60ffe6..ee2f7e3 100644
 --- a/chrome/browser/resources/emulated_extensions/emulator.js
 +++ b/chrome/browser/resources/emulated_extensions/emulator.js
 @@ -21,6 +21,11 @@
@@ -34,7 +34,7 @@ index b60ffe6..529ba15 100644
            }
        ]
    };
-@@ -159,6 +166,330 @@
+@@ -159,6 +166,348 @@
      return active;
    };
  
@@ -146,6 +146,22 @@ index b60ffe6..529ba15 100644
 +    } catch (_) {
 +      return "";
 +    }
++  };
++
++  // A textarea/input selection is not exposed by the Selection API; read the
++  // selected range from the field itself (the page's own copy recorder does
++  // the same in its fallback path).
++  const fieldSelectionText = (target) => {
++    try {
++      if (
++        target && (target.tagName === "TEXTAREA" || target.tagName === "INPUT") &&
++        typeof target.selectionStart === "number"
++      ) {
++        return target.value.slice(
++          target.selectionStart, target.selectionEnd ?? target.selectionStart);
++      }
++    } catch (_) {}
++    return "";
 +  };
 +
 +  const writeClipboard = (text) => {
@@ -265,7 +281,9 @@ index b60ffe6..529ba15 100644
 +
 +  const onUnblockCopy = (event) => {
 +    try { if (event.__jbSynthetic) return; } catch (_) {}
++    let target = null;
 +    try {
++      target = event.target;
 +      event.preventDefault();
 +      event.stopImmediatePropagation();
 +    } catch (_) {}
@@ -277,7 +295,7 @@ index b60ffe6..529ba15 100644
 +        const model = ed && ed.getModel();
 +        if (sel && model) text = model.getValueInRange(sel);
 +      } catch (_) {}
-+      text = text || domText;
++      text = text || domText || fieldSelectionText(target);
 +      if (!text) return;
 +      writeClipboard(text);
 +      rememberCopied(text); // the page records copies this way too
@@ -300,7 +318,7 @@ index b60ffe6..529ba15 100644
 +        const model = ed && ed.getModel();
 +        if (selection && model) text = model.getValueInRange(selection);
 +      } catch (_) {}
-+      text = text || domText;
++      text = text || domText || fieldSelectionText(target);
 +      if (!text) return;
 +      writeClipboard(text);
 +      rememberCopied(text); // the page records cuts this way too
@@ -365,7 +383,7 @@ index b60ffe6..529ba15 100644
    // Stage 1: the bundled registry, synchronously - the listener is in place
    // before any page script runs, so the page's first request is answered on
    // its own schedule (a later task, like a real extension bridge).
-@@ -171,6 +502,10 @@
+@@ -171,6 +520,10 @@
    const activeNow = setActive(bundled);
    if (activeNow.length === 0) return; // host not in the bundled registry: inert
  
