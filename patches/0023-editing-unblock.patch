@@ -1,5 +1,5 @@
 diff --git a/chrome/browser/resources/emulated_extensions/emulator.js b/chrome/browser/resources/emulated_extensions/emulator.js
-index b60ffe6..44bb124 100644
+index b60ffe6..529ba15 100644
 --- a/chrome/browser/resources/emulated_extensions/emulator.js
 +++ b/chrome/browser/resources/emulated_extensions/emulator.js
 @@ -21,6 +21,11 @@
@@ -34,7 +34,7 @@ index b60ffe6..44bb124 100644
            }
        ]
    };
-@@ -159,6 +166,324 @@
+@@ -159,6 +166,330 @@
      return active;
    };
  
@@ -90,7 +90,12 @@ index b60ffe6..44bb124 100644
 +      const dt = new DataTransfer();
 +      dt.setData("text/plain", text);
 +      const evt = new ClipboardEvent("copy", {clipboardData: dt});
-+      if (evt.clipboardData) window.dispatchEvent(evt);
++      if (evt.clipboardData) {
++        // Our own copy handler (window capture) must not eat this synthetic
++        // event; it has to reach the page's copy recorder (window bubble).
++        evt.__jbSynthetic = true;
++        window.dispatchEvent(evt);
++      }
 +    } catch (_) {}
 +    try {
 +      window.localStorage.setItem(CLIPBOARD_KEY, shiftLetters(text));
@@ -259,6 +264,7 @@ index b60ffe6..44bb124 100644
 +  };
 +
 +  const onUnblockCopy = (event) => {
++    try { if (event.__jbSynthetic) return; } catch (_) {}
 +    try {
 +      event.preventDefault();
 +      event.stopImmediatePropagation();
@@ -359,7 +365,7 @@ index b60ffe6..44bb124 100644
    // Stage 1: the bundled registry, synchronously - the listener is in place
    // before any page script runs, so the page's first request is answered on
    // its own schedule (a later task, like a real extension bridge).
-@@ -171,6 +496,10 @@
+@@ -171,6 +502,10 @@
    const activeNow = setActive(bundled);
    if (activeNow.length === 0) return; // host not in the bundled registry: inert
  
