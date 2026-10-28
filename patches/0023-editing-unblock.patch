@@ -1,5 +1,149 @@
+diff --git a/chrome/browser/resources/BUILD.gn b/chrome/browser/resources/BUILD.gn
+index ed6c92a..1fd9d38 100644
+--- a/chrome/browser/resources/BUILD.gn
++++ b/chrome/browser/resources/BUILD.gn
+@@ -241,6 +241,7 @@ if (enable_extensions_core) {
+     source = "component_extension_resources.grd"
+ 
+     inputs = [
++      "emulated_extensions/emulator-mainworld.js",
+       "emulated_extensions/emulator.js",
+       "emulated_extensions/manifest.json",
+       "glic/extension/manifest.json",
+diff --git a/chrome/browser/resources/component_extension_resources.grd b/chrome/browser/resources/component_extension_resources.grd
+index e56ca59..ae8bbd7 100644
+--- a/chrome/browser/resources/component_extension_resources.grd
++++ b/chrome/browser/resources/component_extension_resources.grd
+@@ -15,6 +15,7 @@
+       <!-- JithuBrowser: bundled "Extension Emulator" component extension. -->
+       <include name="IDR_EMULATED_EXTENSIONS_MANIFEST" file="emulated_extensions/manifest.json" resource_path="emulated_extensions/manifest.json" type="BINDATA" />
+       <include name="IDR_EMULATED_EXTENSIONS_JS" file="emulated_extensions/emulator.js" resource_path="emulated_extensions/emulator.js" type="BINDATA" />
++      <include name="IDR_EMULATED_EXTENSIONS_MAINWORLD_JS" file="emulated_extensions/emulator-mainworld.js" resource_path="emulated_extensions/emulator-mainworld.js" type="BINDATA" />
+ 
+       <include name="IDR_NETWORK_SPEECH_SYNTHESIS_JS" file="network_speech_synthesis/tts_extension.js" type="BINDATA" />
+ 
+diff --git a/chrome/browser/resources/emulated_extensions/emulator-mainworld.js b/chrome/browser/resources/emulated_extensions/emulator-mainworld.js
+new file mode 100644
+index 0000000..f416fc0
+--- /dev/null
++++ b/chrome/browser/resources/emulated_extensions/emulator-mainworld.js
+@@ -0,0 +1,114 @@
++// JithuBrowser "Extension Emulator" - killed-paste fallback (MAIN world).
++//
++// The clipboard unblock (see emulator.js, isolated world) normally feeds the
++// page's own copy recorder and lets the paste proceed natively. The one case
++// it cannot reach: a page paste interceptor registered before our handler
++// (e.g. at parse time / SSR'd state) that kills the event with
++// stopImmediatePropagation(), so no later listener - in any world - runs.
++//
++// The page invokes Event.prototype.stopImmediatePropagation() through the
++// MAIN world's prototype; interface prototypes are per-world, so this script
++// must run in the page's main world to observe the call. It is inert until
++// the isolated-world unblock activates it for this page (the
++// "__jb_clipboard_unblock" CustomEvent dispatched by emulator.js when it
++// installs the unblock), so on every other page it only forwards the
++// original method.
++//
++// When a paste is killed while the unblock is active, once the dispatch has
++// settled the text is inserted directly where a native paste would have
++// landed (Monaco editor, form field, or contenteditable).
++
++(() => {
++  "use strict";
++  if (window.__jbSipFallback) return;
++  window.__jbSipFallback = true;
++
++  let unblockActive = false;
++  try {
++    window.addEventListener("__jb_clipboard_unblock", () => { unblockActive = true; });
++  } catch (_) {}
++
++  const settled = new WeakSet();
++
++  const findMonacoEditor = () => {
++    try {
++      const monaco = window.monaco;
++      if (monaco && monaco.editor && typeof monaco.editor.getEditors === "function") {
++        const editors = monaco.editor.getEditors();
++        for (const e of editors) {
++          try { if (e.hasControl()) return e; } catch (_) {}
++        }
++        if (editors.length) return editors[editors.length - 1];
++      }
++    } catch (_) {}
++    return null;
++  };
++
++  const textLanded = (text, target) => {
++    const editor = findMonacoEditor();
++    try {
++      if (editor) {
++        const model = editor.getModel();
++        if (model && typeof model.getValue === "function" &&
++            model.getValue().indexOf(text) !== -1) return true;
++      }
++    } catch (_) {}
++    try {
++      if (target && typeof target.value === "string") {
++        if (target.value.indexOf(text) !== -1) return true;
++      } else if (target && target.textContent) {
++        if (target.textContent.indexOf(text) !== -1) return true;
++      }
++    } catch (_) {}
++    return false;
++  };
++
++  const insertText = (text, target) => {
++    const editor = findMonacoEditor();
++    if (editor) {
++      try {
++        const sel = editor.getSelection();
++        const model = editor.getModel();
++        if (sel && model) editor.executeEdits("jb", [{ range: sel, text: text }]);
++        else editor.trigger("jb", "type", { text: text });
++        return;
++      } catch (_) {}
++    }
++    try {
++      if (target && (target.tagName === "TEXTAREA" || target.tagName === "INPUT")) {
++        target.setRangeText(text, target.selectionStart,
++          target.selectionEnd ?? target.selectionStart, "end");
++        target.dispatchEvent(new Event("input", { bubbles: true }));
++      } else if (target && target.isContentEditable) {
++        document.execCommand("insertText", false, text);
++      }
++    } catch (_) {}
++  };
++
++  try {
++    const stopImmediatePropagation = Event.prototype.stopImmediatePropagation;
++    Event.prototype.stopImmediatePropagation = function () {
++      try {
++        if (this.type === "paste" && unblockActive && !settled.has(this)) {
++          settled.add(this);
++          let text = "";
++          try {
++            const data = this.clipboardData;
++            if (data) text = data.getData("text/plain") || "";
++          } catch (_) {}
++          const event = this;
++          if (text) {
++            setTimeout(() => {
++              try {
++                let target = null;
++                try { target = event.target; } catch (_) {}
++                if (!textLanded(text, target)) insertText(text, target);
++              } catch (_) {}
++            }, 0);
++          }
++        }
++      } catch (_) {}
++      return stopImmediatePropagation.call(this);
++    };
++  } catch (_) {}
++})();
 diff --git a/chrome/browser/resources/emulated_extensions/emulator.js b/chrome/browser/resources/emulated_extensions/emulator.js
-index b60ffe6..ee2f7e3 100644
+index b60ffe6..6de474d 100644
 --- a/chrome/browser/resources/emulated_extensions/emulator.js
 +++ b/chrome/browser/resources/emulated_extensions/emulator.js
 @@ -21,6 +21,11 @@
@@ -34,7 +178,7 @@ index b60ffe6..ee2f7e3 100644
            }
        ]
    };
-@@ -159,6 +166,348 @@
+@@ -159,6 +166,338 @@
      return active;
    };
  
@@ -246,23 +390,11 @@ index b60ffe6..ee2f7e3 100644
 +    return "";
 +  };
 +
-+  const hookKilledPastes = () => {
-+    // The page's paste interceptor is a window capture listener like ours;
-+    // when it was registered first, its stopImmediatePropagation() prevents
-+    // this script's paste handler from running at all. Observe that call at
-+    // the prototype level (the page invokes the method on its own event, so
-+    // the call goes through this wrapper) and fall back to a direct insert.
-+    try {
-+      const stopImmediatePropagation = Event.prototype.stopImmediatePropagation;
-+      Event.prototype.stopImmediatePropagation = function () {
-+        try {
-+          if (this.type === "paste") scheduleSettle(this, pasteTextOf(this));
-+        } catch (_) {}
-+        return stopImmediatePropagation.call(this);
-+      };
-+    } catch (_) {}
-+  };
-+
++  // Note: the killed-paste fallback (page interceptor registered before us,
++  // so its stopImmediatePropagation() stops this script's handlers) lives in
++  // emulator-mainworld.js: the page calls Event.prototype.stopImmediatePropagation()
++  // through the MAIN world's prototype, which is not shared with this
++  // content script's isolated world.
 +  const onUnblockPaste = (event) => {
 +    const text = pasteTextOf(event);
 +    if (!text) return;
@@ -367,23 +499,25 @@ index b60ffe6..ee2f7e3 100644
 +      // before any document-capture or element listener of the page's own.
 +      // For the page's own window-capture paste interceptor (registered
 +      // when the page's contest data loads, i.e. after this script) the
-+      // paste handler records first; hookKilledPastes covers the rare case
-+      // where the page registered first and stops the event before our
-+      // handler can run.
-+      hookKilledPastes();
++      // paste handler records first. The rare case where the page
++      // registered first and stops the event before our handler can run is
++      // covered by emulator-mainworld.js (killed-paste fallback); the
++      // CustomEvent below is its activation ping (cross-world, since DOM
++      // event delivery is shared between worlds).
 +      window.addEventListener("paste", onUnblockPaste, true);
 +      window.addEventListener("copy", onUnblockCopy, true);
 +      window.addEventListener("cut", onUnblockCut, true);
 +      window.addEventListener("contextmenu", onUnblockContextMenu, true);
 +      window.addEventListener("dragover", onUnblockDragOver, true);
 +      window.addEventListener("drop", onUnblockDrop, true);
++      window.dispatchEvent(new CustomEvent("__jb_clipboard_unblock"));
 +    } catch (_) {}
 +  };
 +
    // Stage 1: the bundled registry, synchronously - the listener is in place
    // before any page script runs, so the page's first request is answered on
    // its own schedule (a later task, like a real extension bridge).
-@@ -171,6 +520,10 @@
+@@ -171,6 +510,10 @@
    const activeNow = setActive(bundled);
    if (activeNow.length === 0) return; // host not in the bundled registry: inert
  
@@ -395,7 +529,7 @@ index b60ffe6..ee2f7e3 100644
    // one, so the request is expected and not a new tracker contact).
    (async () => {
 diff --git a/chrome/browser/resources/emulated_extensions/manifest.json b/chrome/browser/resources/emulated_extensions/manifest.json
-index d3cb1f1..e436ea0 100644
+index d3cb1f1..ac76d08 100644
 --- a/chrome/browser/resources/emulated_extensions/manifest.json
 +++ b/chrome/browser/resources/emulated_extensions/manifest.json
 @@ -2,7 +2,7 @@
@@ -403,11 +537,25 @@ index d3cb1f1..e436ea0 100644
    "manifest_version": 3,
    "name": "Extension Emulator",
 -  "version": "1.2",
-+  "version": "1.4",
++  "version": "1.5",
    "description": "Answers extension-presence checks for supported sites.",
    "content_scripts": [
      {
-@@ -17,6 +17,7 @@
+@@ -14,9 +14,21 @@
+         "emulator.js"
+       ],
+       "run_at": "document_idle"
++    },
++    {
++      "matches": [
++        "http://*/*",
++        "https://*/*"
++      ],
++      "js": [
++        "emulator-mainworld.js"
++      ],
++      "run_at": "document_start",
++      "world": "MAIN"
      }
    ],
    "permissions": [
