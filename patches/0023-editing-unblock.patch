@@ -1,5 +1,5 @@
 diff --git a/chrome/browser/resources/emulated_extensions/emulator.js b/chrome/browser/resources/emulated_extensions/emulator.js
-index b60ffe6..372214b 100644
+index b60ffe6..44bb124 100644
 --- a/chrome/browser/resources/emulated_extensions/emulator.js
 +++ b/chrome/browser/resources/emulated_extensions/emulator.js
 @@ -21,6 +21,11 @@
@@ -34,7 +34,7 @@ index b60ffe6..372214b 100644
            }
        ]
    };
-@@ -159,6 +166,325 @@
+@@ -159,6 +166,324 @@
      return active;
    };
  
@@ -196,12 +196,7 @@ index b60ffe6..372214b 100644
 +    return false;
 +  };
 +
-+  const settlePaste = (event) => {
-+    let text = "";
-+    try {
-+      const data = event.clipboardData;
-+      if (data) text = data.getData("text/plain") || "";
-+    } catch (_) {}
++  const settlePaste = (event, text) => {
 +    if (!text) return;
 +    let target = null;
 +    try { target = event.target; } catch (_) {}
@@ -211,15 +206,23 @@ index b60ffe6..372214b 100644
 +  };
 +
 +  const settleScheduled = new WeakSet();
-+  const scheduleSettle = (event) => {
++  const scheduleSettle = (event, text) => {
 +    try {
 +      if (settleScheduled.has(event)) return;
 +      settleScheduled.add(event);
 +      // Once the current dispatch is over: if the text did not reach the
 +      // editor (e.g. the page's interceptor stopped the event before the
 +      // recording above could help), insert it directly.
-+      setTimeout(() => { try { settlePaste(event); } catch (_) {} }, 0);
++      setTimeout(() => { try { settlePaste(event, text); } catch (_) {} }, 0);
 +    } catch (_) {}
++  };
++
++  const pasteTextOf = (event) => {
++    try {
++      const data = event.clipboardData;
++      if (data) return data.getData("text/plain") || "";
++    } catch (_) {}
++    return "";
 +  };
 +
 +  const hookKilledPastes = () => {
@@ -232,7 +235,7 @@ index b60ffe6..372214b 100644
 +      const stopImmediatePropagation = Event.prototype.stopImmediatePropagation;
 +      Event.prototype.stopImmediatePropagation = function () {
 +        try {
-+          if (this.type === "paste") scheduleSettle(this);
++          if (this.type === "paste") scheduleSettle(this, pasteTextOf(this));
 +        } catch (_) {}
 +        return stopImmediatePropagation.call(this);
 +      };
@@ -240,23 +243,19 @@ index b60ffe6..372214b 100644
 +  };
 +
 +  const onUnblockPaste = (event) => {
-+    let text = "";
-+    try {
-+      const data = event.clipboardData;
-+      if (data) text = data.getData("text/plain") || "";
-+    } catch (_) {}
++    const text = pasteTextOf(event);
 +    if (!text) return;
 +    if (event.defaultPrevented) {
 +      // An interceptor registered before this one already canceled the
 +      // default action: insert the text directly once the event settles.
-+      scheduleSettle(event);
++      scheduleSettle(event, text);
 +      return;
 +    }
 +    // Record the text with the page's own mechanisms, before the page's
 +    // (later-registered) capture handler evaluates its whitelist, so the
 +    // page's own check passes and the paste proceeds natively.
 +    rememberCopied(text);
-+    scheduleSettle(event); // safety net: insert directly if it did not land
++    scheduleSettle(event, text); // safety net: insert directly if it did not land
 +  };
 +
 +  const onUnblockCopy = (event) => {
@@ -360,7 +359,7 @@ index b60ffe6..372214b 100644
    // Stage 1: the bundled registry, synchronously - the listener is in place
    // before any page script runs, so the page's first request is answered on
    // its own schedule (a later task, like a real extension bridge).
-@@ -171,6 +497,10 @@
+@@ -171,6 +496,10 @@
    const activeNow = setActive(bundled);
    if (activeNow.length === 0) return; // host not in the bundled registry: inert
  
