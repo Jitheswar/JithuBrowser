@@ -43,7 +43,11 @@ CTL_HOST = "ctl.otherhost.org"         # control host: no unblock
 # default page arms when the contest data "loads" (a later task, like the
 # production page); the early variant arms synchronously at parse time,
 # i.e. before the unblock's own listeners are registered.
-_REPLICA_TEMPLATE = (b"""<!doctype html><title>cpb</title>
+# RAW byte-string on purpose: the page's JS contains \r \n inside a regex
+# literal and a string; a plain b"" would decode them into real line
+# terminators, which is a JS syntax error (regex literals may not contain
+# raw newlines) and silently kills the whole inline script.
+_REPLICA_TEMPLATE = (rb"""<!doctype html><title>cpb</title>
 <div id="host"><div id="wrap">
 <textarea id="ed" rows="6" cols="40"></textarea>
 <textarea id="tmp" rows="2" cols="40"></textarea>

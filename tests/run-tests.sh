@@ -11,6 +11,11 @@ PY="${JB_PYTHON:-$ROOT/build-work/venv/bin/python}"
 if [[ -n "${JB_USE_ROOTFS:-}" && -z "${JB_ROOTFS_RUN:-}" ]]; then
   exec "$ROOT/scripts/enter-rootfs.sh" env JB_ROOTFS_RUN=1 "JB_PYTHON=$PY" bash "$ROOT/tests/run-tests.sh" "$BROWSER" "$@"
 fi
+if [[ -n "${JB_ROOTFS_RUN:-}" ]]; then
+  # Put the rootfs's own binaries first: the outer HPC PATH can shadow them
+  # (e.g. a vendor "Xvfb" shell script ahead of /usr/bin/Xvfb).
+  export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+fi
 if [[ -z "${JB_DISPLAY:-}" ]]; then
   D=:$((90 + RANDOM % 9))
   Xvfb "$D" -screen 0 1920x1080x24 -nolisten tcp >/dev/null 2>&1 &
