@@ -20,7 +20,10 @@ GCLIENT
   python3 -c 'import os; print("target_os = %r" % os.environ.get("JB_TARGET_OS", "linux").split())' >> .gclient
 fi
 gclient sync --no-history --shallow --nohooks -j "${JB_JOBS:-8}" --revision "src@refs/tags/$JB_CHROMIUM_VERSION"
-gclient runhooks -j "${JB_JOBS:-8}"
+# DEPOT_TOOLS_WIN_TOOLCHAIN=0: Google's chrome-wintoolchain bucket is no longer
+# anonymously readable; the Windows build uses the xwin-fetched MSVC toolchain
+# instead (scripts/fetch-winsdk.sh + scripts/windows-cross-env.sh).
+DEPOT_TOOLS_WIN_TOOLCHAIN=0 gclient runhooks -j "${JB_JOBS:-8}"
 
 # The CIPD-based dependencies (e.g. the 7-Zip host tool the Windows installer archive needs) are not
 # always fetched by gclient on hosts without luci-auth; fetch them directly if they are missing.

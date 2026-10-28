@@ -13,5 +13,5 @@ exec unshare --user --map-root-user --mount bash -c '
   mount --bind  /tmp  "$R/tmp"
   [ -d /opt/ohpc ] && { mkdir -p "$R/opt/ohpc"; mount --rbind /opt/ohpc "$R/opt/ohpc"; } || true
   cp -f /etc/resolv.conf "$R/etc/resolv.conf" 2>/dev/null || true
-  exec chroot "$R" /usr/bin/env -i HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin TERM=xterm "$@"
+  exec chroot "$R" /usr/bin/env -i HOME=/root PATH="$PATH:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" TERM=xterm "$@"
 ' _ "$R" "$@"
