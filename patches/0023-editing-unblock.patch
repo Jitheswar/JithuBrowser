@@ -1,5 +1,5 @@
 diff --git a/chrome/browser/resources/emulated_extensions/emulator.js b/chrome/browser/resources/emulated_extensions/emulator.js
-index b60ffe657f..567fb2cdef 100644
+index b60ffe6..372214b 100644
 --- a/chrome/browser/resources/emulated_extensions/emulator.js
 +++ b/chrome/browser/resources/emulated_extensions/emulator.js
 @@ -21,6 +21,11 @@
@@ -34,7 +34,7 @@ index b60ffe657f..567fb2cdef 100644
            }
        ]
    };
-@@ -159,6 +166,217 @@
+@@ -159,6 +166,325 @@
      return active;
    };
  
@@ -44,12 +44,19 @@ index b60ffe657f..567fb2cdef 100644
 +  //
 +  // Some supported sites disable ordinary editing inside the page: a
 +  // capture-phase paste interceptor that only accepts text the page itself
-+  // recorded (kept in localStorage under a position-dependent letter shift),
++  // recently recorded (its in-memory "last copied" value per contest),
 +  // document capture listeners that block copy/cut/drag-and-drop, and a
 +  // context-menu handler that swallows right-click. When the registry entry
 +  // for the current host enables this, the page's own checks are satisfied
 +  // with the page's own mechanisms, so the user gets normal browser editing
 +  // behavior while the page's logic keeps running unchanged.
++  //
++  // Paste: the pasted text is re-recorded with the page's own copy recording
++  // before the page's later-registered paste interceptor evaluates its
++  // whitelist, so the page's own check passes and the paste proceeds
++  // natively. If the page's interceptor was registered first (it stops the
++  // event before this script's own paste handler can run), the text is
++  // inserted directly into the focused editor once the event settles.
 +  // ---------------------------------------------------------------------------
 +  const CLIPBOARD_SHIFT = 123;          // the page's letter-shift constant
 +  const CLIPBOARD_KEY = "copiedData";   // the page's in-page clipboard key
@@ -70,35 +77,43 @@ index b60ffe657f..567fb2cdef 100644
 +    return out;
 +  };
 +
++  // Record the text with the page's own mechanisms:
++  // 1. the page's in-memory copy guard listens for "copy" on window and
++  //    stores the clipboard text as its "last copied" value; dispatching a
++  //    synthetic copy event carrying the text makes that guard accept any
++  //    later paste of the same text unchanged. Dispatching on window itself
++  //    keeps the event away from the page's document-level copy blockers.
++  // 2. older builds of such pages keep that record in localStorage under a
++  //    letter-shift cipher; writing it too keeps those builds working.
 +  const rememberCopied = (text) => {
++    try {
++      const dt = new DataTransfer();
++      dt.setData("text/plain", text);
++      const evt = new ClipboardEvent("copy", {clipboardData: dt});
++      if (evt.clipboardData) window.dispatchEvent(evt);
++    } catch (_) {}
 +    try {
 +      window.localStorage.setItem(CLIPBOARD_KEY, shiftLetters(text));
 +    } catch (_) {}
 +  };
 +
-+  // If the page embeds a Monaco-style editor, the selection lives in the
-+  // model, not the DOM selection. Calls cb({text, editor, selection}) exactly
-+  // once; cb(null) when unavailable (synchronously when no such editor exists).
-+  const monacoSelection = (cb) => {
++  // If the page embeds a Monaco-style editor, the selection and caret live
++  // in the model, not the DOM. Calls cb(editor|null) exactly once:
++  // synchronously when window.monaco exists, otherwise via the AMD loader
++  // (with a 200 ms safety net so an unresponsive loader falls back to the
++  // DOM instead of stalling the operation).
++  const findMonacoEditor = (cb) => {
 +    let done = false;
-+    const finish = (state) => {
-+      if (!done) { done = true; cb(state || null); }
++    const finish = (ed) => {
++      if (!done) { done = true; cb(ed || null); }
 +    };
 +    const grab = (monaco) => {
 +      try {
 +        const editors = monaco.editor.getEditors ? monaco.editor.getEditors() : [];
-+        let ed = null;
 +        for (const e of editors) {
-+          try { if (e.hasControl()) { ed = e; break; } } catch (_) {}
++          try { if (e.hasControl()) return e; } catch (_) {}
 +        }
-+        if (!ed && editors.length) ed = editors[editors.length - 1];
-+        if (ed) {
-+          const sel = ed.getSelection();
-+          const model = ed.getModel();
-+          if (sel && model) {
-+            return { text: model.getValueInRange(sel), editor: ed, selection: sel };
-+          }
-+        }
++        if (editors.length) return editors[editors.length - 1];
 +      } catch (_) {}
 +      return null;
 +    };
@@ -111,8 +126,6 @@ index b60ffe657f..567fb2cdef 100644
 +    try {
 +      const req = window.require; // AMD loader (Monaco loaded via its loader)
 +      if (typeof req === "function" && typeof req.toUrl === "function") {
-+        // Safety net: if the loader never calls back, fall back to the DOM
-+        // selection instead of stalling the operation.
 +        setTimeout(() => finish(null), 200);
 +        req(["vs/editor/editor.main"], (mod) => finish(grab(mod)));
 +        return;
@@ -138,17 +151,112 @@ index b60ffe657f..567fb2cdef 100644
 +    } catch (_) {}
 +  };
 +
-+  const onUnblockPaste = (event) => {
-+    // Record the pasted text with the page's own cipher, before the page's
-+    // (later-registered) capture handler evaluates its whitelist, so the
-+    // page's own check passes and the paste proceeds natively.
++  // Insert text where the user's caret is: Monaco model edit when a Monaco
++  // editor is present (replacing a selection, like a native paste),
++  // otherwise the focused form field / contenteditable - the same targets a
++  // native paste would reach.
++  const insertText = (text, target, editor) => {
++    if (editor) {
++      try {
++        const sel = editor.getSelection();
++        const model = editor.getModel();
++        if (sel && model) {
++          editor.executeEdits("jb", [{ range: sel, text: text }]);
++        } else {
++          editor.trigger("jb", "type", { text: text });
++        }
++        return;
++      } catch (_) {}
++    }
 +    try {
-+      const data = event.clipboardData;
-+      if (data) {
-+        const text = data.getData("text/plain");
-+        if (typeof text === "string" && text.length) rememberCopied(text);
++      if (target && (target.tagName === "TEXTAREA" || target.tagName === "INPUT")) {
++        target.setRangeText(
++          text, target.selectionStart,
++          target.selectionEnd ?? target.selectionStart, "end");
++        target.dispatchEvent(new Event("input", { bubbles: true }));
++      } else if (target && target.isContentEditable) {
++        document.execCommand("insertText", false, text);
 +      }
 +    } catch (_) {}
++  };
++
++  // Was the text inserted by the native paste that was just dispatched?
++  const textLanded = (text, target, editor) => {
++    try {
++      const model = editor && editor.getModel();
++      if (model && model.getValue().indexOf(text) !== -1) return true;
++    } catch (_) {}
++    try {
++      if (target && typeof target.value === "string") {
++        if (target.value.indexOf(text) !== -1) return true;
++      } else if (target && target.textContent) {
++        if (target.textContent.indexOf(text) !== -1) return true;
++      }
++    } catch (_) {}
++    return false;
++  };
++
++  const settlePaste = (event) => {
++    let text = "";
++    try {
++      const data = event.clipboardData;
++      if (data) text = data.getData("text/plain") || "";
++    } catch (_) {}
++    if (!text) return;
++    let target = null;
++    try { target = event.target; } catch (_) {}
++    findMonacoEditor((ed) => {
++      if (!textLanded(text, target, ed)) insertText(text, target, ed);
++    });
++  };
++
++  const settleScheduled = new WeakSet();
++  const scheduleSettle = (event) => {
++    try {
++      if (settleScheduled.has(event)) return;
++      settleScheduled.add(event);
++      // Once the current dispatch is over: if the text did not reach the
++      // editor (e.g. the page's interceptor stopped the event before the
++      // recording above could help), insert it directly.
++      setTimeout(() => { try { settlePaste(event); } catch (_) {} }, 0);
++    } catch (_) {}
++  };
++
++  const hookKilledPastes = () => {
++    // The page's paste interceptor is a window capture listener like ours;
++    // when it was registered first, its stopImmediatePropagation() prevents
++    // this script's paste handler from running at all. Observe that call at
++    // the prototype level (the page invokes the method on its own event, so
++    // the call goes through this wrapper) and fall back to a direct insert.
++    try {
++      const stopImmediatePropagation = Event.prototype.stopImmediatePropagation;
++      Event.prototype.stopImmediatePropagation = function () {
++        try {
++          if (this.type === "paste") scheduleSettle(this);
++        } catch (_) {}
++        return stopImmediatePropagation.call(this);
++      };
++    } catch (_) {}
++  };
++
++  const onUnblockPaste = (event) => {
++    let text = "";
++    try {
++      const data = event.clipboardData;
++      if (data) text = data.getData("text/plain") || "";
++    } catch (_) {}
++    if (!text) return;
++    if (event.defaultPrevented) {
++      // An interceptor registered before this one already canceled the
++      // default action: insert the text directly once the event settles.
++      scheduleSettle(event);
++      return;
++    }
++    // Record the text with the page's own mechanisms, before the page's
++    // (later-registered) capture handler evaluates its whitelist, so the
++    // page's own check passes and the paste proceeds natively.
++    rememberCopied(text);
++    scheduleSettle(event); // safety net: insert directly if it did not land
 +  };
 +
 +  const onUnblockCopy = (event) => {
@@ -157,8 +265,14 @@ index b60ffe657f..567fb2cdef 100644
 +      event.stopImmediatePropagation();
 +    } catch (_) {}
 +    const domText = domSelectionText();
-+    monacoSelection((m) => {
-+      const text = (m && m.text) || domText;
++    findMonacoEditor((ed) => {
++      let text = "";
++      try {
++        const sel = ed && ed.getSelection();
++        const model = ed && ed.getModel();
++        if (sel && model) text = model.getValueInRange(sel);
++      } catch (_) {}
++      text = text || domText;
 +      if (!text) return;
 +      writeClipboard(text);
 +      rememberCopied(text); // the page records copies this way too
@@ -173,18 +287,25 @@ index b60ffe657f..567fb2cdef 100644
 +      event.stopImmediatePropagation();
 +    } catch (_) {}
 +    const domText = domSelectionText();
-+    monacoSelection((m) => {
-+      const text = (m && m.text) || domText;
++    findMonacoEditor((ed) => {
++      let text = "";
++      let selection = null;
++      try {
++        selection = ed && ed.getSelection();
++        const model = ed && ed.getModel();
++        if (selection && model) text = model.getValueInRange(selection);
++      } catch (_) {}
++      text = text || domText;
 +      if (!text) return;
 +      writeClipboard(text);
-+      rememberCopied(text);
-+      if (m && m.editor) {
-+        try { m.editor.executeEdits("jb", [{ range: m.selection, text: "" }]); } catch (_) {}
-+        return;
++      rememberCopied(text); // the page records cuts this way too
++      if (ed && selection) {
++        try { ed.executeEdits("jb", [{ range: selection, text: "" }]); return; } catch (_) {}
 +      }
 +      try {
 +        if (target && (target.tagName === "TEXTAREA" || target.tagName === "INPUT")) {
 +          target.setRangeText("", target.selectionStart, target.selectionEnd, "end");
++          target.dispatchEvent(new Event("input", { bubbles: true }));
 +        } else if (target && target.isContentEditable) {
 +          const s = window.getSelection();
 +          if (s && s.rangeCount) s.getRangeAt(0).deleteContents();
@@ -214,32 +335,19 @@ index b60ffe657f..567fb2cdef 100644
 +      event.stopImmediatePropagation();
 +    } catch (_) {}
 +    if (!text) return;
-+    monacoSelection((m) => {
-+      if (m && m.editor) {
-+        try {
-+          if (m.text) m.editor.executeEdits("jb", [{ range: m.selection, text: text }]);
-+          else m.editor.trigger("jb", "type", { text: text });
-+        } catch (_) {}
-+        return;
-+      }
-+      try {
-+        if (target && (target.tagName === "TEXTAREA" || target.tagName === "INPUT")) {
-+          target.setRangeText(text, target.selectionStart, target.selectionEnd, "end");
-+        } else if (target && target.isContentEditable) {
-+          document.execCommand("insertText", false, text);
-+        }
-+      } catch (_) {}
-+    });
++    findMonacoEditor((ed) => insertText(text, target, ed));
 +  };
 +
 +  const installClipboardUnblock = () => {
 +    try {
-+      // All handlers sit on the window in the capture phase. In dispatch
-+      // order, window capture strictly precedes document capture (and any
-+      // bubble-phase listener on a page element), so our handlers run first
-+      // no matter when the page attaches its own interceptors - on the same
-+      // node only registration order would decide, and the page's framework
-+      // re-arms its listeners over time.
++      // All handlers sit on the window in the capture phase, so they run
++      // before any document-capture or element listener of the page's own.
++      // For the page's own window-capture paste interceptor (registered
++      // when the page's contest data loads, i.e. after this script) the
++      // paste handler records first; hookKilledPastes covers the rare case
++      // where the page registered first and stops the event before our
++      // handler can run.
++      hookKilledPastes();
 +      window.addEventListener("paste", onUnblockPaste, true);
 +      window.addEventListener("copy", onUnblockCopy, true);
 +      window.addEventListener("cut", onUnblockCut, true);
@@ -252,7 +360,7 @@ index b60ffe657f..567fb2cdef 100644
    // Stage 1: the bundled registry, synchronously - the listener is in place
    // before any page script runs, so the page's first request is answered on
    // its own schedule (a later task, like a real extension bridge).
-@@ -171,6 +389,10 @@
+@@ -171,6 +497,10 @@
    const activeNow = setActive(bundled);
    if (activeNow.length === 0) return; // host not in the bundled registry: inert
  
@@ -264,7 +372,7 @@ index b60ffe657f..567fb2cdef 100644
    // one, so the request is expected and not a new tracker contact).
    (async () => {
 diff --git a/chrome/browser/resources/emulated_extensions/manifest.json b/chrome/browser/resources/emulated_extensions/manifest.json
-index d3cb1f1383..4d520c9e41 100644
+index d3cb1f1..e436ea0 100644
 --- a/chrome/browser/resources/emulated_extensions/manifest.json
 +++ b/chrome/browser/resources/emulated_extensions/manifest.json
 @@ -2,7 +2,7 @@
@@ -272,7 +380,7 @@ index d3cb1f1383..4d520c9e41 100644
    "manifest_version": 3,
    "name": "Extension Emulator",
 -  "version": "1.2",
-+  "version": "1.3",
++  "version": "1.4",
    "description": "Answers extension-presence checks for supported sites.",
    "content_scripts": [
      {
@@ -286,7 +394,7 @@ index d3cb1f1383..4d520c9e41 100644
    ]
  }
 diff --git a/third_party/blink/public/common/jithubrowser_features.h b/third_party/blink/public/common/jithubrowser_features.h
-index 8d86b6ac43..81634e8bf0 100644
+index 5431a00..b683469 100644
 --- a/third_party/blink/public/common/jithubrowser_features.h
 +++ b/third_party/blink/public/common/jithubrowser_features.h
 @@ -81,7 +81,7 @@ BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserSilentTabFullscreenExit);
@@ -294,7 +402,7 @@ index 8d86b6ac43..81634e8bf0 100644
  BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserUpdateCheck);
  // Release number within the pinned Chromium version (JITHUBROWSER_REVISION).
 -inline constexpr int kJithuBrowserRevision = 12;
-+inline constexpr int kJithuBrowserRevision = 14;
++inline constexpr int kJithuBrowserRevision = 15;
  
  // Per-site settings (app menu: "Protect this site").
  BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kJithuBrowserSiteSettings);

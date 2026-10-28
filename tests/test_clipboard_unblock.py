@@ -1,10 +1,15 @@
 """End-to-end tests for the editing unblock (registry flag clipboardUnblock).
 
 The page under test is a faithful replica of the blocking mechanisms used by
-sites that disable ordinary editing: a capture-phase paste whitelist
-(exact-string check against the page's own localStorage record, re-armed on
-a 200 ms timer), document-capture copy/cut/drag-and-drop kill switches (with
-warning toasts), and a context-menu blocker.
+sites that disable ordinary editing: an in-memory "copy guard" service that
+records the last text copied/cut within the contest (window copy/cut
+listeners) and a capture-phase paste interceptor on window that only accepts
+text exactly matching that record (per-contest slug + normalized text),
+plus document-capture copy/cut/drag-and-drop kill switches (with warning
+toasts) and a context-menu blocker. The guard is armed when the contest data
+loads (after page parse), which is when the paste interceptor is registered
+too - the "/early" page variant registers it synchronously at parse time to
+exercise the reverse registration order.
 
 Real user input (Ctrl+C / Ctrl+V / Ctrl+X / right click) is injected through
 CDP, so the browser's genuine event pipeline - and therefore the page's
@@ -34,37 +39,19 @@ CP_HOST = "cpb.smartinterviews.in"     # clipboard-unblock host-suffix match tar
 CTL_HOST = "ctl.otherhost.org"         # control host: no unblock
 
 # Faithful replica of the site's editing-block machinery (strict LIVE mode).
-REPLICA_PAGE = (b"""<!doctype html><title>cpb</title>
+# The page template; /*ARM*/ is replaced by the guard's arm point. The
+# default page arms when the contest data "loads" (a later task, like the
+# production page); the early variant arms synchronously at parse time,
+# i.e. before the unblock's own listeners are registered.
+_REPLICA_TEMPLATE = (b"""<!doctype html><title>cpb</title>
 <div id="host"><div id="wrap">
 <textarea id="ed" rows="6" cols="40"></textarea>
 <textarea id="tmp" rows="2" cols="40"></textarea>
 </div></div>
 <script>
 (() => {
-  const PRIME = 123;
-  const encrypt = (k, V) => {
-    let g = "";
-    for (let I = 0; I < k.length; I++) {
-      const te = k[I];
-      if (/[a-zA-Z]/.test(te)) {
-        const O = te.charCodeAt(0), K = te >= "a" && te <= "z" ? 97 : 65;
-        g += String.fromCharCode(((O - K + (I + 1) * V) % 26 + 26) % 26 + K);
-      } else g += te;
-    }
-    return g;
-  };
-  const decrypt = (se, y) => {
-    let g = "";
-    for (let i = 0; i < se.length; i++) {
-      const c = se[i];
-      if (/[a-zA-Z]/.test(c)) {
-        const O = c.charCodeAt(0), K = c >= "a" && c <= "z" ? 97 : 65;
-        g += String.fromCharCode(((O - K - ((i + 1) * y) % 26 + 26) % 26) % 26 + K);
-      } else g += c;
-    }
-    return g;
-  };
-  const S = { toasts: [], pasteEvaluated: 0, pastePassed: 0,
+  const S = { toasts: [], armed: false, recorded: 0,
+              pasteEvaluated: 0, pastePassed: 0,
               copyBlocked: 0, cutBlocked: 0, dragBlocked: 0, ctxBlocked: 0 };
   window.__cpState = S;
   const toast = (m) => {
@@ -76,26 +63,61 @@ REPLICA_PAGE = (b"""<!doctype html><title>cpb</title>
   };
   const disableCopyPaste = true;
   const disableCopyEvent = () => true; // strict: LIVE + REGULAR
+  const contestSlug = "rotation-of-matrix";
+  const normalize = (t) => t.replace(/\r\n?/g, "\n");
 
-  // --- paste whitelist (window capture, re-armed every 200 ms) ---
-  const handlePasteEvent = (dn) => {
-    if (disableCopyPaste) {
-      const data = dn.clipboardData;
-      const pastedText = data ? data.getData("text/plain").toString() : "";
-      const stored = window.localStorage.getItem("copiedData") || "";
-      const decoded = decrypt(stored, PRIME);
-      S.pasteEvaluated++;
-      if (pastedText === decoded) { S.pastePassed++; return; } // allowed
-      dn.stopImmediatePropagation();
-      dn.preventDefault();
-      toast("You can only paste the most recent data that was copied within the page");
+  // --- copy guard service (in-memory "last copied" record, per contest) ---
+  const guard = { activeContestSlug: null, lastCopied: null, listenersAdded: false };
+  const getSelectedText = (target) => {
+    const el = target;
+    if ((el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) &&
+        typeof el.selectionStart === "number") {
+      return el.value.slice(el.selectionStart, el.selectionEnd ?? el.selectionStart);
+    }
+    return window.getSelection() ? window.getSelection().toString() : "";
+  };
+  const recordCopy = (e) => {
+    if (!guard.activeContestSlug || !e.clipboardData) return;
+    let text = e.clipboardData.getData("text/plain");
+    if (!text) {
+      text = getSelectedText(e.target);
+      if (!text) return;
+      e.clipboardData.setData("text/plain", text);
+      e.preventDefault();
+    }
+    guard.lastCopied = { contestSlug: guard.activeContestSlug,
+                         text: normalize(text) };
+    S.recorded++;
+  };
+  const isAllowedPaste = (text, slug) =>
+    !!text && !!guard.lastCopied && guard.lastCopied.contestSlug === slug &&
+    guard.lastCopied.text === normalize(text);
+  guard.startRecording = (slug) => {
+    guard.activeContestSlug = slug;
+    if (!guard.listenersAdded) {
+      window.addEventListener("copy", recordCopy);
+      window.addEventListener("cut", recordCopy);
+      guard.listenersAdded = true;
     }
   };
-  const addPaste = () => window.addEventListener("paste", handlePasteEvent, true);
-  const removePaste = () => window.removeEventListener("paste", handlePasteEvent, true);
-  const rearm = () => { removePaste(); addPaste(); };
-  addPaste();
-  setInterval(rearm, 200);
+
+  // --- paste whitelist (window capture; armed when the contest data loads) ---
+  const handlePasteEvent = (e) => {
+    if (disableCopyPaste) {
+      const text = (e.clipboardData && e.clipboardData.getData("text/plain")) || "";
+      S.pasteEvaluated++;
+      if (isAllowedPaste(text, contestSlug)) { S.pastePassed++; return; } // allowed
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      toast("You can only paste the most recent data that was copied within this contest");
+    }
+  };
+  const armPaste = () => {
+    guard.startRecording(contestSlug);
+    window.addEventListener("paste", handlePasteEvent, true);
+    S.armed = true;
+  };
+  /*ARM*/
 
   // --- copy / cut kill switch (document capture) ---
   document.addEventListener("copy", (dn) => {
@@ -136,6 +158,9 @@ REPLICA_PAGE = (b"""<!doctype html><title>cpb</title>
   }, false);
 })();
 </script>""")
+REPLICA_PAGE = _REPLICA_TEMPLATE.replace(
+    b"/*ARM*/", b"setTimeout(armPaste, 150);")
+EARLY_REPLICA_PAGE = _REPLICA_TEMPLATE.replace(b"/*ARM*/", b"armPaste();")
 
 
 class _CpbHandler(http.server.BaseHTTPRequestHandler):
@@ -147,7 +172,11 @@ class _CpbHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/html")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(REPLICA_PAGE)
+        # "/early" serves the variant whose paste interceptor is registered
+        # at parse time (before the unblock's own listeners).
+        path = self.path.split("?", 1)[0].rstrip("/")
+        self.wfile.write(EARLY_REPLICA_PAGE if path.endswith("/early")
+                         else REPLICA_PAGE)
 
 
 _TLS = {}
@@ -215,6 +244,17 @@ def _state(tab):
     return tab.ev("JSON.parse(JSON.stringify(window.__cpState || {}))")
 
 
+def _wait_armed(tab, timeout=10):
+    """Wait until the replica's paste guard is armed (contest data loaded),
+    so the paste under test hits the page's interceptor."""
+    end = time.time() + timeout
+    while time.time() < end:
+        if _state(tab).get("armed"):
+            return
+        time.sleep(0.2)
+    raise AssertionError("replica paste guard did not arm in %ss" % timeout)
+
+
 @needs_display
 def test_paste_external_real():
     """Real Ctrl+V of text never copied in-page lands in the editor, and the
@@ -226,6 +266,7 @@ def test_paste_external_real():
                        "--host-resolver-rules=MAP %s 127.0.0.1" % CP_HOST])
         try:
             tab = rb.open("https://%s:%d/" % (CP_HOST, port), spy=False)
+            _wait_armed(tab)
             origin = "https://%s:%d" % (CP_HOST, port)
             _grant_clipboard(rb, origin)
             ext = "def external_helper(n):\n    return n * 2 + 1\n"
@@ -247,7 +288,54 @@ def test_paste_external_real():
             assert ext in val, {"value": val, "state": s}
             assert s.get("pasteEvaluated", 0) >= 1, s
             assert s.get("pastePassed", 0) >= 1, s
+            # The page's own recorder saw the text (synthetic copy event),
+            # i.e. the paste passed the page's own guard natively.
+            assert s.get("recorded", 0) >= 1, s
             assert not [t for t in s.get("toasts", []) if "paste" in t.lower()], s
+        finally:
+            rb.quit()
+    finally:
+        srv.shutdown()
+
+
+@needs_display
+def test_paste_early_listener_still_lands():
+    """When the page's paste interceptor is registered before the unblock's
+    own handler (parse-time registration, e.g. SSR'd page state), the paste
+    is still inserted (direct-insert fallback), even though the page's own
+    check rejects it and shows its toast."""
+    _require_browser()
+    srv, port = _serve()
+    try:
+        rb = _browser(["--ignore-certificate-errors",
+                       "--host-resolver-rules=MAP %s 127.0.0.1" % CP_HOST])
+        try:
+            tab = rb.open("https://%s:%d/early" % (CP_HOST, port), spy=False)
+            _wait_armed(tab)
+            origin = "https://%s:%d" % (CP_HOST, port)
+            _grant_clipboard(rb, origin)
+            ext = "early-listener payload 7"
+            ok = tab.ev("navigator.clipboard.writeText(%r)"
+                        ".then(() => 'ok', (e) => 'err:' + e.message)" % ext)
+            assert ok == "ok", ok
+            tab.ev("document.getElementById('ed').focus()")
+            rb.focus_os_window()
+            time.sleep(0.5)
+            _ctrl_combo(tab, "v")
+            end = time.time() + 8
+            val = ""
+            while time.time() < end:
+                val = tab.ev("document.getElementById('ed').value") or ""
+                if ext in val:
+                    break
+                time.sleep(0.3)
+            s = _state(tab)
+            assert ext in val, {"value": val, "state": s}
+            # The page's interceptor ran first and rejected the text...
+            assert s.get("pasteEvaluated", 0) >= 1, s
+            assert not s.get("pastePassed"), s
+            # ...so the unblock inserted the text itself.
+            assert s.get("toasts"), s
         finally:
             rb.quit()
     finally:
@@ -265,6 +353,7 @@ def test_copy_out_roundtrip_real():
                        "--host-resolver-rules=MAP %s 127.0.0.1" % CP_HOST])
         try:
             tab = rb.open("https://%s:%d/" % (CP_HOST, port), spy=False)
+            _wait_armed(tab)
             text = "my solution code 42"
             tab.ev("const el = document.getElementById('ed');"
                    " el.value = %r; el.setSelectionRange(0, %d);"
@@ -305,6 +394,7 @@ def test_cut_real():
                        "--host-resolver-rules=MAP %s 127.0.0.1" % CP_HOST])
         try:
             tab = rb.open("https://%s:%d/" % (CP_HOST, port), spy=False)
+            _wait_armed(tab)
             full = "aaa-keep-bbb-mid-ccc-keep"
             tab.ev("const el = document.getElementById('ed');"
                    " el.value = %r; el.setSelectionRange(9, 16); el.focus();" % full)
@@ -416,6 +506,7 @@ def test_control_host_still_blocks():
             tab = rb.open("https://%s:%d/" % (CTL_HOST, port), spy=False)
             origin = "https://%s:%d" % (CTL_HOST, port)
             _grant_clipboard(rb, origin)
+            _wait_armed(tab)
             ext = "should stay blocked 77"
             ok = tab.ev("navigator.clipboard.writeText(%r)"
                         ".then(() => 'ok', (e) => 'err:' + e.message)" % ext)
@@ -448,6 +539,7 @@ def test_feature_off_still_blocks():
             tab = rb.open("https://%s:%d/" % (CP_HOST, port), spy=False)
             origin = "https://%s:%d" % (CP_HOST, port)
             _grant_clipboard(rb, origin)
+            _wait_armed(tab)
             ext = "should stay blocked 88"
             ok = tab.ev("navigator.clipboard.writeText(%r)"
                         ".then(() => 'ok', (e) => 'err:' + e.message)" % ext)
@@ -485,6 +577,7 @@ def test_per_site_off_still_blocks():
             tab = rb.open("https://%s:%d/" % (CP_HOST, port), spy=False)
             origin = "https://%s:%d" % (CP_HOST, port)
             _grant_clipboard(rb, origin)
+            _wait_armed(tab)
             ext = "should stay blocked 99"
             ok = tab.ev("navigator.clipboard.writeText(%r)"
                         ".then(() => 'ok', (e) => 'err:' + e.message)" % ext)
